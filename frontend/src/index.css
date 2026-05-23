@@ -1,0 +1,480 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .sidebar-link {
+    @apply flex items-center px-4 py-3 text-gray-700 rounded-xl transition-all duration-200 hover:bg-primary-50 hover:text-primary-700 hover:shadow-soft dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white;
+  }
+
+  .sidebar-link.active {
+    @apply bg-primary-600 text-white shadow-card dark:bg-primary-500;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-soft border border-gray-100 p-6 dark:bg-gray-800 dark:border-gray-700;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 dark:hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-primary-100 shadow-soft dark:focus:ring-primary-900;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2.5 px-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-gray-100 shadow-soft dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 dark:focus:ring-gray-600;
+  }
+
+  .form-input {
+    @apply block w-full px-3.5 py-2.5 border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-primary-100 focus:border-primary-400 transition-all duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:ring-primary-900 dark:focus:border-primary-300;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300;
+  }
+
+  .scroll-area {
+    @apply overflow-y-auto pr-1;
+  }
+}
+
+/* Aggressive full screen reset */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* Prevent zoom on input focus on iOS */
+  -webkit-text-size-adjust: 100%;
+  /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
+}
+
+/* Force full screen coverage */
+html, body, #root {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+}
+
+/* Mobile-specific full screen fixes */
+@media screen and (max-width: 767px) {
+  /* Ensure no content extends beyond viewport */
+  .mobile-fullscreen {
+    min-height: 100vh;
+    height: 100vh;
+  }
+
+  /* Fix for mobile browsers with dynamic viewport */
+  .mobile-viewport-fix {
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Allow main content to scroll */
+  .mobile-scrollable {
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+/* Viewport and orientation fixes */
+html {
+  /* Prevent zoom on input focus on iOS */
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
+}
+
+/* Orientation-specific adjustments */
+@media screen and (orientation: portrait) {
+  /* Mobile portrait: optimize for vertical space */
+  .sidebar-portrait {
+    width: 280px;
+    max-width: 90vw;
+  }
+
+  /* Adjust main content padding for portrait */
+  .main-content-portrait {
+    padding: 1rem;
+  }
+
+  /* Stack elements vertically on small portrait screens */
+  .stack-portrait {
+    flex-direction: column;
+  }
+
+  /* Adjust card layouts for portrait */
+  .card-grid-portrait {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+@media screen and (orientation: landscape) {
+  /* Mobile landscape: optimize for horizontal space */
+  .sidebar-landscape {
+    width: 240px;
+    max-width: 70vw;
+  }
+
+  /* Adjust main content for landscape */
+  .main-content-landscape {
+    padding: 1.5rem;
+  }
+
+  /* Side-by-side layouts for landscape */
+  .stack-landscape {
+    flex-direction: row;
+  }
+
+  /* Better grid layouts for landscape */
+  .card-grid-landscape {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+}
+
+/* Tablet-specific adjustments (768px - 1024px) */
+@media screen and (min-width: 768px) and (max-width: 1024px) {
+  /* Tablet portrait */
+  @media screen and (orientation: portrait) {
+    .sidebar-tablet-portrait {
+      width: 260px;
+    }
+
+    .main-content-tablet-portrait {
+      padding: 1.25rem;
+    }
+
+    .card-grid-tablet-portrait {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+  }
+
+  /* Tablet landscape */
+  @media screen and (orientation: landscape) {
+    .sidebar-tablet-landscape {
+      width: 280px;
+    }
+
+    .main-content-tablet-landscape {
+      padding: 2rem;
+    }
+
+    .card-grid-tablet-landscape {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+  }
+}
+
+/* Desktop and laptop adjustments */
+@media screen and (min-width: 1024px) {
+  /* Desktop landscape (most common) */
+  .sidebar-desktop {
+    width: 320px;
+    position: fixed;
+  }
+
+  .sidebar-desktop.lg\\:collapsed {
+    width: 0px;
+    transform: translateX(-100%) !important;
+    transition: transform 0.3s ease-in-out, width 0.3s ease-in-out;
+  }
+
+  .main-content-desktop {
+    margin-left: 320px;
+    padding: 2rem 2.5rem;
+    transition: margin-left 0.3s ease-in-out;
+  }
+
+  .main-content-desktop.collapsed {
+    margin-left: 0px;
+  }
+
+  .card-grid-desktop {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 2rem;
+  }
+}
+
+/* Large desktop screens */
+@media screen and (min-width: 1440px) {
+  .main-content-large-desktop {
+    padding: 3rem;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  .card-grid-large-desktop {
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 2.5rem;
+  }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  /* Touch devices: larger touch targets */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Better spacing for touch */
+  .touch-spacing {
+    padding: 0.75rem 1rem;
+  }
+
+  /* Prevent text selection on touch */
+  .no-select-touch {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  /* Mobile-specific sidebar improvements */
+  .mobile-sidebar {
+    touch-action: pan-y;
+  }
+
+  /* Ensure mobile menu items are easily tappable */
+  .mobile-menu-item {
+    min-height: 48px;
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Mouse device optimizations */
+@media (hover: hover) and (pointer: fine) {
+  /* Mouse devices: hover effects */
+  .hover-effect {
+    transition: all 0.2s ease;
+  }
+
+  .hover-effect:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* High DPI screen optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  /* Sharper borders and shadows for high DPI */
+  .high-dpi-border {
+    border-width: 0.5px;
+  }
+
+  .high-dpi-shadow {
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.08);
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-break {
+    page-break-before: always;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Orientation-specific data attributes (set by JavaScript) */
+[data-orientation="portrait"] {
+  /* Portrait-specific adjustments */
+  .orientation-portrait-spacing {
+    padding: 1rem 0.75rem;
+  }
+
+  .orientation-portrait-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+[data-orientation="landscape"] {
+  /* Landscape-specific adjustments */
+  .orientation-landscape-spacing {
+    padding: 1.5rem 2rem;
+  }
+
+  .orientation-landscape-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+body {
+  @apply text-gray-900 dark:text-white transition-colors duration-300;
+  /* Ensure body doesn't have any default margins/padding that could interfere */
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Full screen app container */
+.mobile-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  overflow: hidden !important;
+}
+
+/* subtle app bg */
+.app-surface {
+  background: radial-gradient(1200px 600px at -10% -10%, rgba(37,99,235,0.06), transparent),
+              radial-gradient(1000px 500px at 110% 10%, rgba(37,99,235,0.05), transparent),
+              #F8FAFF;
+}
+
+.dark .app-surface {
+  background: #000000;
+}
+
+/* nicer scrollbar */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(17, 24, 39, 0.15);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* Dark mode scrollbar */
+.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark *::-webkit-scrollbar-track {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* Healthcare Animation Keyframes */
+@keyframes heartbeat {
+  0% { transform: scale(1); }
+  14% { transform: scale(1.1); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.1); }
+  70% { transform: scale(1); }
+}
+
+@keyframes medicalPulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes dataFlow {
+  0% { transform: translateX(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes scaleIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes medicalGlow {
+  0% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.6); }
+  100% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.3); }
+}
+
+@keyframes heartbeatRing {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes medicalBounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+  60% { transform: translateY(-5px); }
+}
+
+/* Healthcare Animation Classes */
+.animate-heartbeat {
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+.animate-medical-pulse {
+  animation: medicalPulse 2s ease-in-out infinite;
+}
+
+.animate-data-flow {
+  animation: dataFlow 3s linear infinite;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.animate-medical-glow {
+  animation: medicalGlow 2s ease-in-out infinite;
+}
+
+.animate-heartbeat-ring {
+  animation: heartbeatRing 1.5s ease-out infinite;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.animate-medical-bounce {
+  animation: medicalBounce 2s infinite;
+}

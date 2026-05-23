@@ -1,0 +1,34 @@
+/* Action buttons for clinics table */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: background 0.2s, border 0.2s;
+  cursor: pointer;
+}
+.action-btn.view {
+  color: #059669;
+  border-color: #059669;
+}
+.action-btn.edit {
+  color: #004D99;
+  border-color: #004D99;
+}
+.action-btn.status.active {
+  color: #059669;
+  border-color: #059669;
+  background: #e6f4ea;
+}
+.action-btn.status.inactive {
+  color: #6b7280;
+  border-color: #d1d5db;
+  background: #f3f4f6;
+}
+.action-btn:hover {
+  background: #e2e8f0;
+}

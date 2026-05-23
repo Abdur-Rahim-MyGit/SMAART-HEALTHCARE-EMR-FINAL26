@@ -1,0 +1,1291 @@
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+  patientsAPI,
+  doctorsAPI,
+  teleconsultationsAPI,
+} from "../../services/api";
+import { toast } from "react-hot-toast";
+import {
+  Search,
+  Video,
+  Users,
+  Calendar,
+  Building2,
+  User,
+  Phone,
+  Clock,
+  Filter,
+  Eye,
+  Edit,
+  Plus,
+  Play,
+  Pause,
+  PhoneCall,
+  UserCheck,
+  Monitor,
+  Wifi,
+  WifiOff,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  FileText,
+  Download,
+} from "lucide-react";
+
+const TeleconsultationManagement = () => {
+  const { user } = useAuth();
+  const [teleconsultations, setTeleconsultations] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalConsultations: 0,
+    scheduledConsultations: 0,
+    activeConsultations: 0,
+    completedConsultations: 0,
+    cancelledConsultations: 0,
+  });
+
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterDoctor, setFilterDoctor] = useState("all");
+  const [filterDate, setFilterDate] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedConsultation, setSelectedConsultation] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [activeTab, setActiveTab] = useState("active"); // "active" or "history"
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    fetchData();
+    fetchPatients();
+    fetchDoctors();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "history") {
+      fetchHistoryData();
+    }
+  }, [activeTab]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch teleconsultations from API
+      const res = await teleconsultationsAPI.getAll();
+      let teleconsultationData = [];
+
+      if (res?.data?.success && res.data.teleconsultations) {
+        teleconsultationData = res.data.teleconsultations;
+      } else if (res?.data?.data) {
+        teleconsultationData = res.data.data;
+      } else if (Array.isArray(res?.data)) {
+        teleconsultationData = res.data;
+      }
+
+      // Filter teleconsultations by current clinic admin's clinic
+      if (user?.role === "clinic_admin" && user?.clinicId) {
+        teleconsultationData = (teleconsultationData || []).filter(
+          (consultation) => {
+            const consultationClinicId =
+              consultation.clinicId?._id ||
+              consultation.clinicId ||
+              consultation.clinic?._id;
+            return consultationClinicId === user.clinicId;
+          }
+        );
+      }
+
+      // Debug log to see the structure of teleconsultation data
+      console.log(
+        "Teleconsultations data structure:",
+        teleconsultationData?.[0]
+      );
+      console.log("User clinic ID:", user?.clinicId);
+      console.log(
+        "Filtered teleconsultations count:",
+        teleconsultationData?.length
+      );
+
+      setTeleconsultations(teleconsultationData || []);
+
+      // Calculate stats
+      const scheduled = (teleconsultationData || []).filter(
+        (c) => c.status?.toLowerCase() === "scheduled"
+      ).length;
+      const active = (teleconsultationData || []).filter(
+        (c) =>
+          c.status?.toLowerCase() === "started" ||
+          c.status?.toLowerCase() === "in progress"
+      ).length;
+      const completed = (teleconsultationData || []).filter(
+        (c) => c.status?.toLowerCase() === "completed"
+      ).length;
+      const cancelled = (teleconsultationData || []).filter(
+        (c) => c.status?.toLowerCase() === "cancelled"
+      ).length;
+
+      setStats({
+        totalConsultations: (teleconsultationData || []).length,
+        scheduledConsultations: scheduled,
+        activeConsultations: active,
+        completedConsultations: completed,
+        cancelledConsultations: cancelled,
+      });
+    } catch (err) {
+      console.error("Error fetching teleconsultations:", err);
+      toast.error("Failed to fetch teleconsultations");
+
+      // Set empty data instead of sample data
+      setTeleconsultations([]);
+      setStats({
+        totalConsultations: 0,
+        scheduledConsultations: 0,
+        activeConsultations: 0,
+        completedConsultations: 0,
+        cancelledConsultations: 0,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPatients = async () => {
+    try {
+      const res = await patientsAPI.getAll();
+      let patientsData = [];
+      if (res?.data?.success && res.data.patients)
+        patientsData = res.data.patients;
+      else if (res?.data?.data) patientsData = res.data.data;
+      else if (Array.isArray(res?.data)) patientsData = res.data;
+
+      // Filter by clinic if user is clinic admin
+      if (user?.role === "clinic_admin" && user?.clinicId) {
+        patientsData = (patientsData || []).filter((patient) => {
+          const patientClinicId =
+            patient.clinicId?._id || patient.clinicId || patient.clinic?._id;
+          return patientClinicId === user.clinicId;
+        });
+      }
+
+      setPatients(patientsData || []);
+    } catch (e) {
+      console.error("Error fetching patients:", e);
+    }
+  };
+
+  const fetchDoctors = async () => {
+    try {
+      const res = await doctorsAPI.getAll();
+      let doctorsData = [];
+      if (res?.data?.success && res.data.doctors)
+        doctorsData = res.data.doctors;
+      else if (res?.data?.data) doctorsData = res.data.data;
+      else if (Array.isArray(res?.data)) doctorsData = res.data;
+
+      // Filter by clinic if user is clinic admin
+      if (user?.role === "clinic_admin" && user?.clinicId) {
+        doctorsData = (doctorsData || []).filter((doctor) => {
+          const doctorClinicId =
+            doctor.clinicId?._id || doctor.clinicId || doctor.clinic?._id;
+          return doctorClinicId === user.clinicId;
+        });
+      }
+
+      setDoctors(doctorsData || []);
+    } catch (e) {
+      console.error("Error fetching doctors:", e);
+    }
+  };
+
+  const fetchHistoryData = async () => {
+    setHistoryLoading(true);
+    try {
+      // Fetch historical teleconsultations (completed, cancelled, no show)
+      const res = await teleconsultationsAPI.getAll();
+      let teleconsultationData = [];
+
+      if (res?.data?.success && res.data.teleconsultations) {
+        teleconsultationData = res.data.teleconsultations;
+      } else if (res?.data?.data) {
+        teleconsultationData = res.data.data;
+      } else if (Array.isArray(res?.data)) {
+        teleconsultationData = res.data;
+      }
+
+      // Filter for history (completed, cancelled, no show) and by clinic
+      let historyTeleconsultations = teleconsultationData.filter(
+        (consultation) => {
+          const isHistorical = ["completed", "cancelled", "no show"].includes(
+            consultation.status?.toLowerCase()
+          );
+
+          if (user?.role === "clinic_admin" && user?.clinicId) {
+            const consultationClinicId =
+              consultation.clinicId?._id ||
+              consultation.clinicId ||
+              consultation.clinic?._id;
+            return isHistorical && consultationClinicId === user.clinicId;
+          }
+
+          return isHistorical;
+        }
+      );
+
+      // Sort by most recent first
+      historyTeleconsultations.sort((a, b) => {
+        const dateA = new Date(a.actualEndTime || a.updatedAt || a.createdAt);
+        const dateB = new Date(b.actualEndTime || b.updatedAt || b.createdAt);
+        return dateB - dateA;
+      });
+
+      console.log("History teleconsultations data:", historyTeleconsultations);
+      setHistoryData(historyTeleconsultations || []);
+    } catch (err) {
+      console.error("Error fetching teleconsultation history:", err);
+      toast.error("Failed to fetch teleconsultation history");
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Get patient name safely
+  const getPatientName = (consultation) => {
+    if (consultation.patientName) {
+      return consultation.patientName;
+    }
+
+    const patient = consultation.patientId;
+    if (!patient) return "Unknown Patient";
+
+    if (typeof patient === "string") {
+      // If patientId is just an ID string, try to find the patient in our patients list
+      const fullPatient = patients.find((p) => p._id === patient);
+      if (fullPatient) {
+        return (
+          fullPatient.fullName ||
+          `${fullPatient.firstName || ""} ${
+            fullPatient.lastName || ""
+          }`.trim() ||
+          "Unknown Patient"
+        );
+      }
+      return "Unknown Patient";
+    }
+
+    // If patient is an object
+    return (
+      patient.fullName ||
+      `${patient.firstName || ""} ${patient.lastName || ""}`.trim() ||
+      patient.name ||
+      "Unknown Patient"
+    );
+  };
+
+  // Get doctor name safely
+  const getDoctorName = (consultation) => {
+    if (consultation.doctorName) {
+      return consultation.doctorName;
+    }
+
+    const doctor = consultation.doctorId;
+    if (!doctor) return "Unknown Doctor";
+
+    if (typeof doctor === "string") {
+      // If doctorId is just an ID string, try to find the doctor in our doctors list
+      const fullDoctor = doctors.find((d) => d._id === doctor);
+      if (fullDoctor) {
+        return (
+          fullDoctor.fullName ||
+          `${fullDoctor.firstName || ""} ${fullDoctor.lastName || ""}`.trim() ||
+          "Unknown Doctor"
+        );
+      }
+      return "Unknown Doctor";
+    }
+
+    // If doctor is an object
+    return (
+      doctor.fullName ||
+      `${doctor.firstName || ""} ${doctor.lastName || ""}`.trim() ||
+      doctor.name ||
+      "Unknown Doctor"
+    );
+  };
+
+  // Get patient details safely
+  const getPatientDetails = (consultation) => {
+    const patient = consultation.patientId;
+    if (!patient) return { age: "N/A", phone: "N/A", email: "N/A" };
+
+    if (typeof patient === "string") {
+      const fullPatient = patients.find((p) => p._id === patient);
+      return fullPatient
+        ? {
+            age: fullPatient.age || "N/A",
+            phone: fullPatient.phone || "N/A",
+            email: fullPatient.email || "N/A",
+          }
+        : { age: "N/A", phone: "N/A", email: "N/A" };
+    }
+
+    return {
+      age: patient.age || "N/A",
+      phone: patient.phone || "N/A",
+      email: patient.email || "N/A",
+    };
+  };
+
+  // Get doctor details safely
+  const getDoctorDetails = (consultation) => {
+    const doctor = consultation.doctorId;
+    if (!doctor) return { specialization: "N/A", phone: "N/A" };
+
+    if (typeof doctor === "string") {
+      const fullDoctor = doctors.find((d) => d._id === doctor);
+      return fullDoctor
+        ? {
+            specialization:
+              fullDoctor.specialty || fullDoctor.specialization || "N/A",
+            phone: fullDoctor.phone || "N/A",
+          }
+        : { specialization: "N/A", phone: "N/A" };
+    }
+
+    return {
+      specialization: doctor.specialty || doctor.specialization || "N/A",
+      phone: doctor.phone || "N/A",
+    };
+  };
+
+  // Get scheduled date time safely
+  const getScheduledDateTime = (consultation) => {
+    if (consultation.scheduledDateTime) {
+      return consultation.scheduledDateTime;
+    }
+
+    if (consultation.scheduledDate && consultation.scheduledTime) {
+      try {
+        const dateStr = new Date(consultation.scheduledDate)
+          .toISOString()
+          .split("T")[0];
+        return new Date(`${dateStr}T${consultation.scheduledTime}`);
+      } catch (error) {
+        console.error("Error parsing scheduled date/time:", error);
+        return new Date(consultation.scheduledDate);
+      }
+    }
+
+    return consultation.scheduledDate
+      ? new Date(consultation.scheduledDate)
+      : new Date();
+  };
+
+  // Get consultation ID safely
+  const getConsultationId = (consultation) => {
+    return (
+      consultation.meetingId ||
+      consultation.consultationId ||
+      consultation._id ||
+      "N/A"
+    );
+  };
+
+  // Get meeting URL safely
+  const getMeetingUrl = (consultation) => {
+    return (
+      consultation.fullMeetingUrl ||
+      consultation.meetingUrl ||
+      consultation.meetingLink ||
+      ""
+    );
+  };
+  // Filter teleconsultations based on search and filters
+  const filteredTeleconsultations = (() => {
+    let list = activeTab === "history" ? historyData : teleconsultations || [];
+
+    // For active tab, filter out completed/cancelled/no show consultations
+    if (activeTab === "active") {
+      list = list.filter(
+        (c) =>
+          !["completed", "cancelled", "no show"].includes(
+            c.status?.toLowerCase()
+          )
+      );
+    }
+
+    // Apply status filter
+    if (filterStatus !== "all") {
+      list = list.filter(
+        (c) => c.status?.toLowerCase() === filterStatus.toLowerCase()
+      );
+    }
+
+    // Apply doctor filter
+    if (filterDoctor !== "all") {
+      list = list.filter((c) => {
+        const doctorId =
+          typeof c.doctorId === "string" ? c.doctorId : c.doctorId?._id;
+        return doctorId === filterDoctor;
+      });
+    }
+
+    // Apply date filter
+    if (filterDate !== "all") {
+      const today = new Date();
+
+      switch (filterDate) {
+        case "today":
+          list = list.filter((c) => {
+            const cDate =
+              activeTab === "history"
+                ? new Date(c.actualEndTime || c.updatedAt || c.createdAt)
+                : getScheduledDateTime(c);
+            return cDate.toDateString() === today.toDateString();
+          });
+          break;
+        case "week":
+          const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+          list = list.filter((c) => {
+            const cDate =
+              activeTab === "history"
+                ? new Date(c.actualEndTime || c.updatedAt || c.createdAt)
+                : getScheduledDateTime(c);
+            return cDate >= weekAgo && cDate <= today;
+          });
+          break;
+        case "month":
+          const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+          list = list.filter((c) => {
+            const cDate =
+              activeTab === "history"
+                ? new Date(c.actualEndTime || c.updatedAt || c.createdAt)
+                : getScheduledDateTime(c);
+            return cDate >= monthAgo && cDate <= today;
+          });
+          break;
+      }
+    }
+
+    // Apply search filter
+    if (searchTerm && searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      list = list.filter((consultation) => {
+        const patientName = getPatientName(consultation).toLowerCase();
+        const doctorName = getDoctorName(consultation).toLowerCase();
+        const consultationId = getConsultationId(consultation).toLowerCase();
+        const symptoms = (
+          consultation.consultationNotes ||
+          consultation.symptoms ||
+          ""
+        ).toLowerCase();
+        const diagnosis = (consultation.diagnosis || "").toLowerCase();
+
+        return (
+          patientName.includes(searchLower) ||
+          doctorName.includes(searchLower) ||
+          consultationId.includes(searchLower) ||
+          symptoms.includes(searchLower) ||
+          diagnosis.includes(searchLower)
+        );
+      });
+    }
+
+    return list;
+  })();
+
+  // View consultation details
+  const viewConsultationDetails = (consultation) => {
+    setSelectedConsultation(consultation);
+    setShowModal(true);
+  };
+
+  // Get status color and icon
+  const getStatusDisplay = (status) => {
+    const normalizedStatus = status?.toLowerCase() || "";
+    switch (normalizedStatus) {
+      case "scheduled":
+        return {
+          color: "bg-blue-100 text-blue-800",
+          icon: <Calendar className="h-3 w-3 mr-1" />,
+          text: "Scheduled",
+        };
+      case "started":
+      case "in progress":
+        return {
+          color: "bg-green-100 text-green-800",
+          icon: <Video className="h-3 w-3 mr-1" />,
+          text: "Active",
+        };
+      case "completed":
+        return {
+          color: "bg-gray-100 text-gray-800",
+          icon: <CheckCircle className="h-3 w-3 mr-1" />,
+          text: "Completed",
+        };
+      case "cancelled":
+        return {
+          color: "bg-red-100 text-red-800",
+          icon: <XCircle className="h-3 w-3 mr-1" />,
+          text: "Cancelled",
+        };
+      case "no show":
+        return {
+          color: "bg-orange-100 text-orange-800",
+          icon: <AlertCircle className="h-3 w-3 mr-1" />,
+          text: "No Show",
+        };
+      default:
+        return {
+          color: "bg-yellow-100 text-yellow-800",
+          icon: <AlertCircle className="h-3 w-3 mr-1" />,
+          text: status || "Unknown",
+        };
+    }
+  };
+
+  // Get consultation type color
+  const getTypeColor = (type) => {
+    switch (type) {
+      case "emergency":
+        return "bg-red-50 text-red-700 border-red-200";
+      case "follow-up":
+        return "bg-blue-50 text-blue-700 border-blue-200";
+      case "initial":
+        return "bg-green-50 text-green-700 border-green-200";
+      default:
+        return "bg-gray-50 text-gray-700 border-gray-200";
+    }
+  };
+
+  // Join consultation
+  const joinConsultation = (consultation) => {
+    const meetingUrl = getMeetingUrl(consultation);
+    if (meetingUrl) {
+      window.open(meetingUrl, "_blank");
+    } else {
+      toast.error("Meeting link not available");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+
+  // Consultation Details Modal Component
+  const ConsultationModal = ({ consultation, isOpen, onClose }) => {
+    if (!isOpen || !consultation) return null;
+
+    const statusDisplay = getStatusDisplay(consultation.status);
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Teleconsultation Details
+              </h2>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:text-gray-400 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Consultation Info */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                    Consultation Information
+                  </h3>
+                  <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg space-y-3">
+                    <div className="flex justify-between">
+                      <span className="font-medium">Consultation ID:</span>
+                      <span>{getConsultationId(consultation)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Scheduled:</span>
+                      <span>
+                        {getScheduledDateTime(consultation).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Duration:</span>
+                      <span>
+                        {consultation.durationFormatted ||
+                          `${consultation.duration || 30} minutes`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">Status:</span>
+                      <span
+                        className={`flex items-center px-2 py-1 text-xs font-semibold rounded-full ${statusDisplay.color}`}
+                      >
+                        {statusDisplay.icon}
+                        {statusDisplay.text}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Type:</span>
+                      <span
+                        className={`px-2 py-1 text-xs border rounded-full ${getTypeColor(
+                          consultation.consultationType
+                        )}`}
+                      >
+                        {consultation.consultationType || "General"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Patient Info */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Patient</h4>
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-primary-100 h-10 w-10 rounded-full flex items-center justify-center">
+                      <User className="h-5 w-5 text-primary-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">
+                        {getPatientName(consultation)}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Age: {getPatientDetails(consultation).age}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {getPatientDetails(consultation).phone}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {getPatientDetails(consultation).email}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Doctor Info */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Doctor</h4>
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-blue-100 h-10 w-10 rounded-full flex items-center justify-center">
+                      <UserCheck className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">
+                        {getDoctorName(consultation)}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {getDoctorDetails(consultation).specialization}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {getDoctorDetails(consultation).phone}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Medical Details */}
+              <div className="space-y-4">
+                {/* Symptoms/Notes */}
+                {(consultation.consultationNotes || consultation.symptoms) && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                      Consultation Notes
+                    </h4>
+                    <div className="bg-yellow-50 p-3 rounded-lg">
+                      <p className="text-gray-800 dark:text-gray-200">
+                        {consultation.consultationNotes ||
+                          consultation.symptoms}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Diagnosis */}
+                {consultation.diagnosis && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                      Diagnosis
+                    </h4>
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <p className="text-gray-800 dark:text-gray-200">{consultation.diagnosis}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Prescription */}
+                {consultation.prescription && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                      Prescription/Treatment
+                    </h4>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <p className="text-gray-800 dark:text-gray-200">
+                        {consultation.prescription}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Meeting Details */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                    Meeting Details
+                  </h4>
+                  <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Meeting Link:</span>
+                      <button
+                        onClick={() => joinConsultation(consultation)}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                        disabled={
+                          consultation.status === "Completed" ||
+                          consultation.status === "Cancelled"
+                        }
+                      >
+                        <Video className="h-4 w-4 inline mr-1" />
+                        {consultation.status?.toLowerCase() === "started" ||
+                        consultation.status?.toLowerCase() === "in progress"
+                          ? "Join Now"
+                          : "View Link"}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Recording:</span>
+                      <span className="text-sm">
+                        {consultation.features?.recording?.enabled &&
+                        consultation.features?.recording?.recordingUrl ? (
+                          <button className="text-green-600 hover:text-green-800 font-medium">
+                            <Download className="h-4 w-4 inline mr-1" />
+                            Available
+                          </button>
+                        ) : (
+                          <span className="text-gray-500 dark:text-gray-400">Not Available</span>
+                        )}
+                      </span>
+                    </div>
+                    {consultation.jitsiConfig && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        <p>Room: {consultation.jitsiConfig.roomName}</p>
+                        <p>Domain: {consultation.jitsiConfig.domain}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6 space-x-3">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-700"
+              >
+                Close
+              </button>
+              {consultation.status?.toLowerCase() === "scheduled" && (
+                <button
+                  onClick={() => joinConsultation(consultation)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                >
+                  <Video className="h-4 w-4 mr-2" />
+                  Join Consultation
+                </button>
+              )}
+              {(consultation.status?.toLowerCase() === "started" ||
+                consultation.status?.toLowerCase() === "in progress") && (
+                <button
+                  onClick={() => joinConsultation(consultation)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+                >
+                  <Video className="h-4 w-4 mr-2" />
+                  Join Active Session
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Teleconsultations
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            {user?.role === "clinic_admin"
+              ? "Manage video consultations for your clinic"
+              : "Manage teleconsultation sessions and video calls"}
+          </p>
+        </div>
+        <button className="btn-primary flex items-center">
+          <Plus className="h-4 w-4 mr-2" />
+          Schedule Consultation
+        </button>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === "active"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Video className="w-4 h-4" />
+              <span>Active Consultations</span>
+              <span className="bg-blue-100 text-blue-600 text-xs px-2 py-1 rounded-full">
+                {stats.activeConsultations + stats.scheduledConsultations}
+              </span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === "history"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Clock className="w-4 h-4" />
+              <span>History</span>
+              <span className="bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-400 text-xs px-2 py-1 rounded-full">
+                {historyLoading ? "..." : historyData.length}
+              </span>
+            </div>
+          </button>
+        </nav>
+      </div>
+
+      {/* Stats Cards */}
+      {activeTab === "active" && (
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="bg-blue-100 p-2 rounded-lg">
+                <Video className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="ml-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Total</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {stats.totalConsultations}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="bg-blue-100 p-2 rounded-lg">
+                <Calendar className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="ml-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Scheduled</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {stats.scheduledConsultations}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="bg-green-100 p-2 rounded-lg">
+                <Wifi className="h-5 w-5 text-green-600" />
+              </div>
+              <div className="ml-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Active</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {stats.activeConsultations}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="bg-gray-100 dark:bg-gray-600 p-2 rounded-lg">
+                <CheckCircle className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Completed</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {stats.completedConsultations}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="bg-red-100 p-2 rounded-lg">
+                <XCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div className="ml-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Cancelled</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {stats.cancelledConsultations}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        {historyLoading && activeTab === "history" ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-gray-500 dark:text-gray-400">Loading consultation history...</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col lg:flex-row gap-4 mb-6">
+              {/* Search Filter */}
+              <div className="relative flex-1 max-w-lg">
+                <Search
+                  className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${
+                    searchTerm ? "text-blue-500" : "text-gray-400"
+                  }`}
+                />
+                <input
+                  type="text"
+                  placeholder="Search by patient, doctor, consultation ID, or symptoms..."
+                  className={`form-input pl-10 ${
+                    searchTerm ? "border-blue-300 ring-1 ring-blue-200" : ""
+                  }`}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:text-gray-400"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              {/* Doctor Filter */}
+              <div className="min-w-[200px]">
+                <select
+                  value={filterDoctor}
+                  onChange={(e) => setFilterDoctor(e.target.value)}
+                  className="form-input"
+                >
+                  <option value="all">All Doctors</option>
+                  {doctors.map((doctor) => (
+                    <option key={doctor._id} value={doctor._id}>
+                      {doctor.firstName} {doctor.lastName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div className="min-w-[150px]">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="form-input"
+                >
+                  <option value="all">All Status</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="started">Started</option>
+                  <option value="in progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="no show">No Show</option>
+                </select>
+              </div>
+
+              {/* Date Filter */}
+              <div className="min-w-[150px]">
+                <select
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="form-input"
+                >
+                  <option value="all">All Dates</option>
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                </select>
+              </div>
+
+              {/* Filter Status */}
+              {(searchTerm ||
+                filterDoctor !== "all" ||
+                filterStatus !== "all" ||
+                filterDate !== "all") && (
+                <div className="flex items-center text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+                  <Filter className="h-4 w-4 mr-2" />
+                  {filteredTeleconsultations.length} of{" "}
+                  {teleconsultations.length} consultations
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setFilterDoctor("all");
+                      setFilterStatus("all");
+                      setFilterDate("all");
+                    }}
+                    className="ml-2 text-blue-700 hover:text-blue-900 font-medium"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Consultation
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Patient
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Doctor
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      {activeTab === "history" ? "Completed Date" : "Schedule"}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {filteredTeleconsultations.map((consultation) => {
+                    const statusDisplay = getStatusDisplay(consultation.status);
+                    return (
+                      <tr
+                        key={consultation._id}
+                        className="hover:bg-primary-50 cursor-pointer transition-colors"
+                        onClick={() => viewConsultationDetails(consultation)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="bg-blue-100 h-10 w-10 rounded-full flex items-center justify-center mr-3">
+                              <Video className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                {getConsultationId(consultation)}
+                              </div>
+                              <div
+                                className={`text-xs px-2 py-1 border rounded-full ${getTypeColor(
+                                  consultation.consultationType
+                                )}`}
+                              >
+                                {consultation.consultationType || "General"}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {getPatientName(consultation)}
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            Age: {getPatientDetails(consultation).age}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {getDoctorName(consultation)}
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            {getDoctorDetails(consultation).specialization}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
+                            <div>
+                              {activeTab === "history" ? (
+                                <>
+                                  <div>
+                                    {new Date(
+                                      consultation.actualEndTime ||
+                                        consultation.updatedAt ||
+                                        consultation.createdAt
+                                    ).toLocaleDateString()}
+                                  </div>
+                                  <div className="text-gray-500 dark:text-gray-400">
+                                    {new Date(
+                                      consultation.actualEndTime ||
+                                        consultation.updatedAt ||
+                                        consultation.createdAt
+                                    ).toLocaleTimeString()}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>
+                                    {getScheduledDateTime(
+                                      consultation
+                                    ).toLocaleDateString()}
+                                  </div>
+                                  <div className="text-gray-500 dark:text-gray-400">
+                                    {getScheduledDateTime(
+                                      consultation
+                                    ).toLocaleTimeString()}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${statusDisplay.color}`}
+                          >
+                            {statusDisplay.icon}
+                            {statusDisplay.text}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-2">
+                            {activeTab === "history" ? (
+                              <>
+                                {consultation.features?.recording
+                                  ?.recordingUrl && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      window.open(
+                                        consultation.features.recording
+                                          .recordingUrl,
+                                        "_blank"
+                                      );
+                                    }}
+                                    className="text-purple-600 hover:text-purple-900"
+                                    title="View Recording"
+                                  >
+                                    <Play className="h-4 w-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    viewConsultationDetails(consultation);
+                                  }}
+                                  className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-white"
+                                  title="View Details"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {(consultation.status?.toLowerCase() ===
+                                  "started" ||
+                                  consultation.status?.toLowerCase() ===
+                                    "in progress") && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      joinConsultation(consultation);
+                                    }}
+                                    className="text-green-600 hover:text-green-900"
+                                    title="Join Active Session"
+                                  >
+                                    <Video className="h-4 w-4" />
+                                  </button>
+                                )}
+                                {consultation.status?.toLowerCase() ===
+                                  "scheduled" && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      joinConsultation(consultation);
+                                    }}
+                                    className="text-blue-600 hover:text-blue-900"
+                                    title="Start Consultation"
+                                  >
+                                    <Play className="h-4 w-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    viewConsultationDetails(consultation);
+                                  }}
+                                  className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-white"
+                                  title="View Details"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredTeleconsultations.length === 0 && (
+              <div className="text-center py-12">
+                {activeTab === "history" ? (
+                  <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                ) : (
+                  <Video className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                )}
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  {activeTab === "history"
+                    ? "No consultation history found"
+                    : "No teleconsultations found"}
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400">
+                  {searchTerm ||
+                  filterDoctor !== "all" ||
+                  filterStatus !== "all" ||
+                  filterDate !== "all"
+                    ? "Try adjusting your search or filter criteria."
+                    : activeTab === "history"
+                    ? "No completed consultations yet."
+                    : "No teleconsultations scheduled."}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Consultation Details Modal */}
+      {showModal && selectedConsultation && (
+        <ConsultationModal
+          consultation={selectedConsultation}
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+export default TeleconsultationManagement;
