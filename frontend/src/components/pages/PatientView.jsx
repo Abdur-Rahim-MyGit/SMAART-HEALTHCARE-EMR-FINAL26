@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import CarePlanTab from "./CarePlanTab";
 import {
   ArrowLeft,
   User,
@@ -377,6 +378,7 @@ const PatientView = () => {
     { id: "test-reports", label: "Test Reports", icon: Activity },
     { id: "prescriptions", label: "Prescriptions", icon: Pill },
     { id: "treatment-history", label: "Treatment History", icon: History },
+    { id: "care-plan", label: "Treatment Plan", icon: Activity },
     { id: "referrals", label: "Referrals", icon: Users },
     { id: "invoices", label: "Invoices", icon: CreditCard },
     { id: "patient-uploads", label: "Patient Uploads", icon: Camera },
@@ -442,6 +444,8 @@ const PatientView = () => {
         );
       case "treatment-history":
         return <TreatmentHistoryTab patient={patient} />;
+      case "care-plan":
+        return <CarePlanTab patient={patient} />;
       case "referrals":
         return <ReferralTab patient={patient} referrals={referrals} />;
       case "invoices":

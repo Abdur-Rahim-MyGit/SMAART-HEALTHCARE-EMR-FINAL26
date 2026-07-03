@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { appointmentsAPI } from "../../services/api";
+import AppointmentRequestsPanel from "./AppointmentRequestsPanel";
 import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "react-hot-toast";
 import { format, isToday, isTomorrow, isYesterday, parseISO } from "date-fns";
@@ -109,15 +110,27 @@ const Appointments = () => {
         (apt) => apt.status === "Cancelled" || apt.status === "No Show"
       ).length,
       todayAppointments: appointmentsData.filter((apt) => {
-        const aptDate = new Date(apt.date).toISOString().split("T")[0];
-        return aptDate === todayStr;
+        if (!apt.date) return false;
+        try {
+          const aptDate = new Date(apt.date);
+          if (isNaN(aptDate.getTime())) return false;
+          return aptDate.toISOString().split("T")[0] === todayStr;
+        } catch (e) {
+          return false;
+        }
       }).length,
       upcomingAppointments: appointmentsData.filter((apt) => {
-        const aptDate = new Date(apt.date);
-        return (
-          aptDate > today &&
-          (apt.status === "Pending" || apt.status === "Confirmed")
-        );
+        if (!apt.date) return false;
+        try {
+          const aptDate = new Date(apt.date);
+          if (isNaN(aptDate.getTime())) return false;
+          return (
+            aptDate > today &&
+            (apt.status === "Pending" || apt.status === "Confirmed")
+          );
+        } catch (e) {
+          return false;
+        }
       }).length,
     };
 
@@ -149,22 +162,28 @@ const Appointments = () => {
 
     const matchesDate = () => {
       if (dateFilter === "") return true;
-      const appointmentDate = new Date(appointment.date);
-      const today = new Date();
+      if (!appointment.date) return false;
+      try {
+        const appointmentDate = new Date(appointment.date);
+        if (isNaN(appointmentDate.getTime())) return false;
+        const today = new Date();
 
-      switch (dateFilter) {
-        case "today":
-          return isToday(appointmentDate);
-        case "tomorrow":
-          return isTomorrow(appointmentDate);
-        case "yesterday":
-          return isYesterday(appointmentDate);
-        case "upcoming":
-          return appointmentDate > today;
-        case "past":
-          return appointmentDate < today;
-        default:
-          return true;
+        switch (dateFilter) {
+          case "today":
+            return isToday(appointmentDate);
+          case "tomorrow":
+            return isTomorrow(appointmentDate);
+          case "yesterday":
+            return isYesterday(appointmentDate);
+          case "upcoming":
+            return appointmentDate > today;
+          case "past":
+            return appointmentDate < today;
+          default:
+            return true;
+        }
+      } catch (e) {
+        return false;
       }
     };
 
@@ -189,8 +208,15 @@ const Appointments = () => {
 
     const matchesSpecificDate =
       !filters.specificDate ||
-      new Date(appointment.date).toISOString().split("T")[0] ===
-        filters.specificDate;
+      (appointment.date && (() => {
+        try {
+          const d = new Date(appointment.date);
+          if (isNaN(d.getTime())) return false;
+          return d.toISOString().split("T")[0] === filters.specificDate;
+        } catch (e) {
+          return false;
+        }
+      })());
 
     const matchesPriority =
       !filters.priority ||
@@ -217,26 +243,26 @@ const Appointments = () => {
       case "latest":
         // Sort by creation date (latest first), then by appointment date (latest first)
         const createdAtDiff =
-          new Date(b.createdAt || b.updatedAt) -
-          new Date(a.createdAt || a.updatedAt);
+          new Date(b.createdAt || b.updatedAt || 0) -
+          new Date(a.createdAt || a.updatedAt || 0);
         if (createdAtDiff !== 0) return createdAtDiff;
-        return new Date(b.date) - new Date(a.date);
+        return new Date(b.date || 0) - new Date(a.date || 0);
 
       case "oldest":
         // Sort by creation date (oldest first), then by appointment date (oldest first)
         const createdAtDiffOld =
-          new Date(a.createdAt || a.updatedAt) -
-          new Date(b.createdAt || b.updatedAt);
+          new Date(a.createdAt || a.updatedAt || 0) -
+          new Date(b.createdAt || b.updatedAt || 0);
         if (createdAtDiffOld !== 0) return createdAtDiffOld;
-        return new Date(a.date) - new Date(b.date);
+        return new Date(a.date || 0) - new Date(b.date || 0);
 
       case "appointment_date_asc":
         // Sort by appointment date (earliest first)
-        return new Date(a.date) - new Date(b.date);
+        return new Date(a.date || 0) - new Date(b.date || 0);
 
       case "appointment_date_desc":
         // Sort by appointment date (latest first)
-        return new Date(b.date) - new Date(a.date);
+        return new Date(b.date || 0) - new Date(a.date || 0);
 
       case "patient_name":
         // Sort by patient name alphabetically
@@ -276,15 +302,21 @@ const Appointments = () => {
   };
 
   const formatAppointmentDate = (date) => {
-    const appointmentDate = new Date(date);
-    if (isToday(appointmentDate)) {
-      return "Today";
-    } else if (isTomorrow(appointmentDate)) {
-      return "Tomorrow";
-    } else if (isYesterday(appointmentDate)) {
-      return "Yesterday";
-    } else {
-      return format(appointmentDate, "MMM dd, yyyy");
+    if (!date) return "N/A";
+    try {
+      const appointmentDate = new Date(date);
+      if (isNaN(appointmentDate.getTime())) return "N/A";
+      if (isToday(appointmentDate)) {
+        return "Today";
+      } else if (isTomorrow(appointmentDate)) {
+        return "Tomorrow";
+      } else if (isYesterday(appointmentDate)) {
+        return "Yesterday";
+      } else {
+        return format(appointmentDate, "MMM dd, yyyy");
+      }
+    } catch (e) {
+      return "N/A";
     }
   };
 
@@ -315,6 +347,9 @@ const Appointments = () => {
 
   return (
     <div className="space-y-6 bg-gray-50 dark:bg-black p-6">
+      {/* Incoming appointment requests from the public SMAART appointment website */}
+      <AppointmentRequestsPanel onReviewed={fetchAppointments} />
+
       {/* Header */}
       <div className="bg-gradient-to-r from-[#e6f0ff] to-[#e6f7f5] dark:from-gray-800 dark:to-gray-700 rounded-xl p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">

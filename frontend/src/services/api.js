@@ -119,6 +119,18 @@ export const appointmentsAPI = {
   update: (id, data) => api.put(`/appointments/${id}`, data),
 };
 
+// Physio treatment plan + CDSS history for a patient (bridged from Consultant side)
+export const carePlanAPI = {
+  get: (patientId) => api.get(`/care-plan/${patientId}`),
+};
+
+// Appointment requests submitted from the public SMAART appointment website
+export const appointmentRequestsAPI = {
+  getAll: (status = "pending") => api.get("/appointment-requests", { params: { status } }),
+  review: (id, status, reviewNotes = "") =>
+    api.patch(`/appointment-requests/${id}/review`, { status, reviewNotes }),
+};
+
 // Billing API
 export const billingAPI = {
   getAll: (params) => api.get("/billing", { params }),

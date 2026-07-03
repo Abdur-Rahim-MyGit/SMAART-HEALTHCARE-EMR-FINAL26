@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+require("dotenv").config();
 const Invoice = require("../models/Invoice");
 const Patient = require("../models/Patient");
 const Clinic = require("../models/Clinic");
@@ -6,7 +7,7 @@ const Clinic = require("../models/Clinic");
 // MongoDB connection
 const connectDB = async () => {
   try {
-    await mongoose.connect("mongodb+srv://souban:souban123@smaartdb.turl6oh.mongodb.net/?retryWrites=true&w=majority&appName=SmaartDB");
+    await mongoose.connect(process.env.MONGODB_URI);
     console.log("✅ MongoDB Connected Successfully!");
   } catch (error) {
     console.error("❌ MongoDB connection failed:", error.message);

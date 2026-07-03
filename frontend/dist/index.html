@@ -3,10 +3,90 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/healthcare.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#2563EB">
+    <meta name="apple-touch-fullscreen" content="yes">
     <title>EMR Smaart Healthcare System</title>
-    <script type="module" crossorigin src="/assets/index-b8489a4f.js"></script>
-    <link rel="stylesheet" href="/assets/index-889bc6da.css">
+    <script>
+      // Apply theme immediately to prevent flash
+      (function() {
+        const theme = localStorage.getItem('theme');
+        if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+
+      // Orientation change handling
+      (function() {
+        function handleOrientationChange() {
+          const orientation = window.orientation || (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+          document.documentElement.setAttribute('data-orientation', orientation);
+
+          // Force layout recalculation
+          setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+
+            // Force full screen dimensions
+            document.documentElement.style.width = '100%';
+            document.documentElement.style.height = '100%';
+            document.body.style.width = '100%';
+            document.body.style.height = '100%';
+            document.getElementById('root').style.width = '100%';
+            document.getElementById('root').style.height = '100%';
+          }, 100);
+        }
+
+        // Set initial orientation
+        handleOrientationChange();
+
+        // Listen for orientation changes
+        window.addEventListener('orientationchange', handleOrientationChange);
+        window.addEventListener('resize', function() {
+          const orientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+          document.documentElement.setAttribute('data-orientation', orientation);
+
+          // Reapply full screen on resize
+          document.documentElement.style.width = '100%';
+          document.documentElement.style.height = '100%';
+          document.body.style.width = '100%';
+          document.body.style.height = '100%';
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.width = '100%';
+            root.style.height = '100%';
+          }
+        });
+
+        // Prevent zoom on input focus for iOS
+        const inputs = document.querySelectorAll('input, textarea, select');
+        inputs.forEach(input => {
+          input.addEventListener('focus', function() {
+            setTimeout(() => {
+              window.scrollTo(0, 0);
+              document.body.scrollTop = 0;
+            }, 100);
+          });
+        });
+
+        // Force full screen on load
+        window.addEventListener('load', function() {
+          document.documentElement.style.width = '100%';
+          document.documentElement.style.height = '100%';
+          document.body.style.width = '100%';
+          document.body.style.height = '100%';
+          const root = document.getElementById('root');
+          if (root) {
+            root.style.width = '100%';
+            root.style.height = '100%';
+          }
+        });
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-84be4741.js"></script>
+    <link rel="stylesheet" href="/assets/index-9300c176.css">
   </head>
   <body>
     <div id="root"></div>

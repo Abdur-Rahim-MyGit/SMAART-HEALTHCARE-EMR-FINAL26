@@ -12,6 +12,8 @@ const userRoutes = require("./routes/users");
 const clinicRoutes = require("./routes/clinics");
 const doctorRoutes = require("./routes/doctors");
 const appointmentRoutes = require("./routes/appointments");
+const appointmentRequestRoutes = require("./routes/appointmentRequests");
+const carePlanRoutes = require("./routes/carePlan");
 const patientRoutes = require("./routes/patients");
 const billingRoutes = require("./routes/billing");
 const pharmacyRoutes = require("./routes/pharmacy");
@@ -50,6 +52,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/clinics", clinicRoutes);
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/appointment-requests", appointmentRequestRoutes);
+app.use("/api/care-plan", carePlanRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/pharmacy", pharmacyRoutes);
@@ -80,6 +84,53 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+const startServer = (port) => {
+  const server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`⚠️ Port ${port} is in use. Attempting to free it...`);
+      const { execSync } = require("child_process");
+      try {
+        // Find and kill the process using the port
+        const result = execSync(
+          `netstat -ano | findstr ":${port}" | findstr "LISTENING"`,
+          { encoding: "utf8" }
+        );
+        const lines = result.trim().split("\n");
+        const pids = new Set();
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && pid !== "0" && pid !== String(process.pid)) {
+            pids.add(pid);
+          }
+        }
+        for (const pid of pids) {
+          try {
+            execSync(`taskkill /PID ${pid} /F`, { encoding: "utf8" });
+            console.log(`✅ Killed process ${pid} on port ${port}`);
+          } catch (e) {
+            // Process may have already exited
+          }
+        }
+        // Retry after a short delay
+        setTimeout(() => {
+          console.log(`🔄 Retrying server startup on port ${port}...`);
+          startServer(port);
+        }, 1500);
+      } catch (e) {
+        console.error(`❌ Could not free port ${port}. Please kill the process manually.`);
+        process.exit(1);
+      }
+    } else {
+      console.error("Server error:", err);
+      process.exit(1);
+    }
+  });
+};
+
+startServer(PORT);

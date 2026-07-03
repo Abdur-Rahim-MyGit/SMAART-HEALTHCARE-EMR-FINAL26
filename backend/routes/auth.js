@@ -494,13 +494,24 @@ router.post("/forgot-password", async (req, res) => {
         emailError.message
       );
 
-      // Return error if email sending fails
-      res.status(500).json({
-        success: false,
-        message: "Failed to send OTP email. Please try again later.",
-        error: emailError.message,
-        otp: process.env.NODE_ENV === "development" ? otp : undefined, // Show OTP in dev even if email fails
-      });
+      // In development mode, still return success with OTP so dev/testing isn't blocked
+      if (process.env.NODE_ENV === "development") {
+        console.log(`⚠️ Dev mode: Email failed but returning OTP in response. OTP: ${otp}`);
+        res.json({
+          success: true,
+          message: "Email sending failed, but OTP is available below (development mode).",
+          type: type,
+          otp: otp,
+          emailFailed: true,
+        });
+      } else {
+        // In production, return error if email sending fails
+        res.status(500).json({
+          success: false,
+          message: "Failed to send OTP email. Please try again later.",
+          error: emailError.message,
+        });
+      }
     }
   } catch (error) {
     console.error("Forgot password error:", error);
@@ -709,13 +720,24 @@ router.post("/request-login-otp", async (req, res) => {
     } catch (emailError) {
       console.error("❌ Failed to send login OTP email:", emailError.message);
 
-      // Return error if email sending fails
-      res.status(500).json({
-        success: false,
-        message: "Failed to send login OTP email. Please try again later.",
-        error: emailError.message,
-        otp: process.env.NODE_ENV === "development" ? otp : undefined, // Show OTP in dev even if email fails
-      });
+      // In development mode, still return success with OTP so dev/testing isn't blocked
+      if (process.env.NODE_ENV === "development") {
+        console.log(`⚠️ Dev mode: Email failed but returning OTP in response. OTP: ${otp}`);
+        res.json({
+          success: true,
+          message: "Email sending failed, but OTP is available below (development mode).",
+          userId: user._id,
+          otp: otp,
+          emailFailed: true,
+        });
+      } else {
+        // In production, return error if email sending fails
+        res.status(500).json({
+          success: false,
+          message: "Failed to send login OTP email. Please try again later.",
+          error: emailError.message,
+        });
+      }
     }
   } catch (error) {
     console.error("Request login OTP error:", error);

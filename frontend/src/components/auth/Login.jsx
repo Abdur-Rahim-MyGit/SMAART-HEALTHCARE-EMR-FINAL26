@@ -52,7 +52,17 @@ const Login = () => {
           setUserId(response.data.userId);
           setUserEmail(data.email);
           setOtpStep("otp");
-          toast.success("OTP sent to your email! Please check your inbox.");
+          
+          // Show OTP in toast if available (development mode / email failed)
+          if (response.data.otp) {
+            if (response.data.emailFailed) {
+              toast.success(`⚠️ Email failed — Dev OTP: ${response.data.otp}`, { duration: 10000 });
+            } else {
+              toast.success(`OTP sent to your email! Dev OTP: ${response.data.otp}`, { duration: 10000 });
+            }
+          } else {
+            toast.success("OTP sent to your email! Please check your inbox.");
+          }
         }
       } else if (loginType === "user" && otpStep === "otp") {
         // Verify OTP and complete login

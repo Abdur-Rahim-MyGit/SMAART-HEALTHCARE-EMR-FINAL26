@@ -155,6 +155,8 @@ router.post("/", auth, authorize("super_master_admin"), async (req, res) => {
     // Create clinic first
     const clinic = new Clinic({
       ...clinicData,
+      // Default adminName to adminUsername or ownerName if not provided
+      adminName: clinicData.adminName || adminUsername || clinicData.ownerName || "Admin",
       adminUsername: adminUsername,
       adminPassword: adminPassword,
       adminContact: adminContact || clinicData.phone || "",

@@ -29,11 +29,20 @@ const ForgotPassword = () => {
         type: type,
       });
       if (res.data.success) {
-        toast.success(
-          `OTP sent to your ${
-            type === "clinic" ? "clinic admin" : "user"
-          } email`
-        );
+        // Show OTP in toast if available (development mode / email failed)
+        if (res.data.otp) {
+          if (res.data.emailFailed) {
+            toast.success(`⚠️ Email failed — Dev OTP: ${res.data.otp}`, { duration: 10000 });
+          } else {
+            toast.success(`OTP sent! Dev OTP: ${res.data.otp}`, { duration: 10000 });
+          }
+        } else {
+          toast.success(
+            `OTP sent to your ${
+              type === "clinic" ? "clinic admin" : "user"
+            } email`
+          );
+        }
         navigate("/reset-password", {
           state: {
             email: data.email,

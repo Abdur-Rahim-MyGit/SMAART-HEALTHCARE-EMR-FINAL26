@@ -5,7 +5,7 @@ require("dotenv").config();
 
 // Connect to MongoDB
 mongoose.connect(
-  "mongodb+srv://naif:naif123@smaartdb.turl6oh.mongodb.net/SmaartDB",
+  process.env.MONGODB_URI,
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,
