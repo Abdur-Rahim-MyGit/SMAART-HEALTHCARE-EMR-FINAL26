@@ -3,7 +3,7 @@ const { getChannel } = require('./connection');
 const { config } = require('../../config');
 
 /** Publishes one event with publisher confirms. Resolves when the broker acknowledges. */
-function publishEvent(event) {
+async function publishEvent(event) {
   const ch = getChannel();
   if (!ch) throw new Error('RabbitMQ channel not available');
   const env = config();

@@ -1,6 +1,13 @@
 'use strict';
 /** Post-migration validation: counts, relationships, identifiers, dates, duplicates. */
-async function validate(knex, src, plan, { uuidFor }) {
+const { withSystem } = require('../../infrastructure/postgres/tenant');
+
+/** Runs as the system role so row level security does not hide migrated rows from the checks. */
+async function validate(db, src, plan, ctx) {
+  return withSystem((trx) => validateWith(trx, src, plan, ctx), db);
+}
+
+async function validateWith(knex, src, plan, { uuidFor }) {
   const failures = [];
   const checks = {};
   const count = async (t) => Number((await knex(t).count({ c: '*' }))[0].c);

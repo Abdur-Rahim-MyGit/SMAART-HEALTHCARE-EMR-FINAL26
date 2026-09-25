@@ -65,7 +65,7 @@ export const authAPI = {
   verifyResetOTP: (data) => api.post("/auth/verify-reset-otp", data),
   resetPassword: (data) => api.post("/auth/reset-password", data),
   me: () => api.get("/auth/me"),
-  logout: () => api.post("/auth/logout"),
+  logout: (token) => api.post("/auth/logout", {}, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
   refresh: () => api.post("/auth/refresh"),
 };
 

@@ -1,0 +1,41 @@
+{
+  "family": "smaart-emr-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/smaart-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/smaart-ecs-task",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "IMAGE_PLACEHOLDER",
+      "portMappings": [{ "containerPort": 5001, "protocol": "tcp" }],
+      "essential": true,
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "5001" },
+        { "name": "TRUST_PROXY", "value": "true" },
+        { "name": "STORAGE_PROVIDER", "value": "cloudinary" },
+        { "name": "EMAIL_TRANSPORT", "value": "smtp" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/DATABASE_URL" },
+        { "name": "MONGODB_URI", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/MONGODB_URI" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/REDIS_URL" },
+        { "name": "RABBITMQ_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/RABBITMQ_URL" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/JWT_SECRET" },
+        { "name": "CORS_ORIGINS", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/CORS_ORIGINS" },
+        { "name": "CLOUDINARY_CLOUD_NAME", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/CLOUDINARY_CLOUD_NAME" },
+        { "name": "CLOUDINARY_API_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/CLOUDINARY_API_KEY" },
+        { "name": "CLOUDINARY_API_SECRET", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/CLOUDINARY_API_SECRET" },
+        { "name": "EMAIL_HOST", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/EMAIL_HOST" },
+        { "name": "EMAIL_PORT", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/EMAIL_PORT" },
+        { "name": "EMAIL_USER", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/EMAIL_USER" },
+        { "name": "EMAIL_PASS", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/EMAIL_PASS" }
+      ],
+      "healthCheck": { "command": ["CMD-SHELL", "wget -qO- http://127.0.0.1:5001/health/live || exit 1"], "interval": 30, "timeout": 5, "retries": 3 },
+      "logConfiguration": { "logDriver": "awslogs", "options": { "awslogs-group": "/smaart/api", "awslogs-region": "REGION", "awslogs-stream-prefix": "api" } }
+    }
+  ]
+}

@@ -49,7 +49,8 @@ function createApp() {
   protectedApi.use('/vitals', require('./modules/vitals/routes'));
   protectedApi.use('/conditions', require('./modules/clinical-records/routes').conditions);
   protectedApi.use('/allergies', require('./modules/clinical-records/routes').allergies);
-  protectedApi.use('/medications', require('./modules/clinical-records/routes').medications);
+  protectedApi.use('/patient-medications', require('./modules/clinical-records/routes').medications);
+  protectedApi.use('/medications', require('./modules/pharmacy/routes'));
   protectedApi.use('/prescriptions', require('./modules/prescriptions/routes'));
   protectedApi.use('/lab-orders', require('./modules/laboratory/routes').orders);
   protectedApi.use('/lab-results', require('./modules/laboratory/routes').results);

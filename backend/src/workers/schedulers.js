@@ -3,6 +3,8 @@ const { getKnex } = require('../infrastructure/postgres/knex');
 const { withSystem } = require('../infrastructure/postgres/tenant');
 const { getLogger } = require('../common/logging/logger');
 const { withLock } = require('../infrastructure/redis/lock');
+const { exportDocuments } = require('./backupExport');
+const { fetchBytes } = require('./consumers/documents');
 
 /** Periodic housekeeping: expire challenges/sessions, flag overdue invoices, deactivate expired clinics' access. */
 async function housekeeping() {
@@ -16,9 +18,16 @@ async function housekeeping() {
   }, { retries: 0 }).catch((err) => { if (err.code !== 'LOCKED') getLogger().error({ err }, 'housekeeping failed'); });
 }
 
-function startSchedulers({ intervalMs = 5 * 60 * 1000 } = {}) {
-  const t = setInterval(housekeeping, intervalMs);
-  housekeeping();
-  return () => clearInterval(t);
+/** Runs once per day (lock protected across worker replicas). */
+async function nightlyBackup() {
+  await withLock('scheduler-backup', 6 * 60 * 60 * 1000, () => exportDocuments({ fetchBytes }), { retries: 0 }).catch((err) => { if (err.code !== 'LOCKED') getLogger().error({ err }, 'backup export failed'); });
 }
-module.exports = { startSchedulers, housekeeping };
+
+function startSchedulers({ intervalMs = 5 * 60 * 1000, backupIntervalMs = 24 * 60 * 60 * 1000 } = {}) {
+  const t = setInterval(housekeeping, intervalMs);
+  const b = setInterval(nightlyBackup, backupIntervalMs);
+  housekeeping();
+  if (process.env.BACKUP_DIR) nightlyBackup();
+  return () => { clearInterval(t); clearInterval(b); };
+}
+module.exports = { startSchedulers, housekeeping, nightlyBackup };

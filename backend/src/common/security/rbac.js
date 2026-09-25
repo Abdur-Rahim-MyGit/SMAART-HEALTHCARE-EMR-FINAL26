@@ -37,7 +37,7 @@ const PERMISSIONS = Object.freeze({
   'audit:read': 'View audit logs for own clinic',
   'audit:system': 'View system-wide audit logs',
   'settings:read': 'View clinic settings',
-  'settings:write': 'Manage clinic settings',
+  'settings:write': 'Manage clinic settings and pharmacy inventory',
   'system:manage': 'Manage system settings, integrations and FHIR configuration',
   'system:health': 'View system health',
   'fhir:read': 'Read FHIR resources',

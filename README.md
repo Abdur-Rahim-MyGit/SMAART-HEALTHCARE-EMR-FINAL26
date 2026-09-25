@@ -31,7 +31,12 @@ Without Docker: run PostgreSQL/Redis locally, then in `backend/`: `npm ci && npm
 | `npm run migrate`, `npm run seed` | PostgreSQL schema and reference data |
 | `npm run bootstrap:admin` | create the first Super Master Admin from env |
 | `npm run migrate:data -- --mongo <uri> --dry-run` | legacy MongoDB → PostgreSQL migration with validation report |
-| `npm run lint`, `npm test` | ESLint, Vitest (unit + integration + security) |
+| `npm run lint`, `npm test` | ESLint, Vitest (unit + integration + security + migration + workers) |
+| `cd frontend && npm run test:e2e` | Playwright end-to-end tests of the real UI against the API |
+
+## Optional infrastructure
+
+`CLAMAV_HOST`/`CLAMAV_PORT` enable malware scanning of uploads (infected files are quarantined); `BACKUP_DIR` (+ `BACKUP_COPY_FILES=true`) enables the nightly document backup export; `deploy/monitoring` holds Prometheus scrape config, alert rules and a Grafana dashboard; `deploy/aws` holds the ECS task definition used by the pipeline.
 
 ## Security summary
 

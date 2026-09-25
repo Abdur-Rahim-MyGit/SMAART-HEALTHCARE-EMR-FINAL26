@@ -6,3 +6,4 @@ storage/
 .test-storage/
 coverage/
 *.log
+test-results/
