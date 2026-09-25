@@ -6,7 +6,7 @@ require("dotenv").config();
 
 // Connect to MongoDB
 mongoose.connect(
-  "mongodb+srv://naif:naif123@smaartdb.turl6oh.mongodb.net/SmaartDB",
+  "mongodb+srv://<REDACTED-ROTATE-THIS-CREDENTIAL>",
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,

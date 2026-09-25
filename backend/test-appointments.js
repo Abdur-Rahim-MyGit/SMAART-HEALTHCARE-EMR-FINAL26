@@ -7,7 +7,7 @@ require("dotenv").config();
 
 const MONGODB_URI =
   process.env.MONGODB_URI ||
-  "mongodb+srv://souban:souban123@smaartdb.turl6oh.mongodb.net/?retryWrites=true&w=majority&appName=SmaartDB";
+  "mongodb+srv://<REDACTED-ROTATE-THIS-CREDENTIAL>";
 
 async function testAppointments() {
   try {

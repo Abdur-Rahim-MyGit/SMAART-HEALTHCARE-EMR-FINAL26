@@ -6,7 +6,7 @@ const User = require("../models/User");
 // MongoDB connection
 const connectDB = async () => {
   try {
-    await mongoose.connect("mongodb+srv://souban:souban123@smaartdb.turl6oh.mongodb.net/?retryWrites=true&w=majority&appName=SmaartDB");
+    await mongoose.connect("mongodb+srv://<REDACTED-ROTATE-THIS-CREDENTIAL>");
     console.log("✅ MongoDB Connected Successfully!");
   } catch (error) {
     console.error("❌ MongoDB connection failed:", error.message);

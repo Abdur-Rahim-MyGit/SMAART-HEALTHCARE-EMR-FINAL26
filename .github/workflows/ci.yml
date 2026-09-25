@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  backend:
+    name: Backend lint, unit, integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: smaart_migrator, POSTGRES_PASSWORD: smaart_dev, POSTGRES_DB: smaart_emr_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U smaart_migrator" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+      mongodb:
+        image: mongo:7
+        ports: ["27017:27017"]
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://smaart_app:smaart_dev@localhost:5432/smaart_emr_test
+      MIGRATION_DATABASE_URL: postgres://smaart_migrator:smaart_dev@localhost:5432/smaart_emr_test
+      REDIS_URL: redis://localhost:6379
+      MONGODB_URI: mongodb://localhost:27017/smaart_emr_test
+      JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret-1234
+      CORS_ORIGINS: http://localhost:3000
+      EMAIL_TRANSPORT: none
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_DIR: ./.test-storage
+      AUTH_ALLOW_PASSWORD_ONLY_LOGIN: "true"
+      LOG_LEVEL: silent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: backend/package-lock.json }
+      - name: Create least-privilege application role
+        run: PGPASSWORD=smaart_dev psql -h localhost -U smaart_migrator -d smaart_emr_test -c "CREATE ROLE smaart_app LOGIN PASSWORD 'smaart_dev' NOSUPERUSER NOBYPASSRLS;"
+      - run: npm ci
+        working-directory: backend
+      - run: npm run lint
+        working-directory: backend
+      - run: npm run test:unit
+        working-directory: backend
+      - run: npm run test:integration
+        working-directory: backend
+      - name: Dependency audit (high and critical)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: backend
+        continue-on-error: true
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+        env: { VITE_API_URL: /api/v1 }
+
+  security-scan:
+    name: Secret and vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with: { scan-type: fs, scan-ref: ., severity: "HIGH,CRITICAL", exit-code: "0", format: sarif, output: trivy.sarif }
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: trivy.sarif }
+
+  docker:
+    name: Build images
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with: { context: backend, push: false, tags: "smaart-emr-api:${{ github.sha }}" }
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with: { context: frontend, push: false, tags: "smaart-emr-web:${{ github.sha }}" }
+
+  deploy-staging:
+    name: Deploy to staging
+    if: github.ref == 'refs/heads/main'
+    needs: [docker, security-scan]
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: echo "Push images to the registry and roll out to the staging environment (ECS/EC2 task definition update) here."
+
+  deploy-production:
+    name: Deploy to production
+    if: github.ref == 'refs/heads/main'
+    needs: [deploy-staging]
+    runs-on: ubuntu-latest
+    environment: production   # requires manual approval configured on the GitHub environment
+    steps:
+      - run: echo "Production rollout after approval: run migrations (npm run migrate) then update the service."

@@ -36,6 +36,7 @@ const ResetPassword = () => {
         email: data.email,
         password: data.password,
         type: type,
+        resetToken: verify.data.resetToken,
       });
       if (res.data.success) {
         toast.success(

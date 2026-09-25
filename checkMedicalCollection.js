@@ -1,7 +1,7 @@
 const { MongoClient } = require('mongodb');
 
 // Connection URI - Replace with your actual MongoDB connection string
-const uri = 'mongodb+srv://souban:souban123@smaartdb.turl6oh.mongodb.net/?retryWrites=true&w=majority&appName=SmaartDB';
+const uri = 'mongodb+srv://<REDACTED-ROTATE-THIS-CREDENTIAL>';
 
 async function main() {
   const client = new MongoClient(uri);

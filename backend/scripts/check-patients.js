@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Patient = require('../models/Patient');
 
-mongoose.connect('mongodb+srv://naif:naif123@smaartdb.turl6oh.mongodb.net/SmaartDB')
+mongoose.connect('mongodb+srv://<REDACTED-ROTATE-THIS-CREDENTIAL>')
 .then(async () => {
   console.log('Checking existing patients...');
   const patients = await Patient.find({});
