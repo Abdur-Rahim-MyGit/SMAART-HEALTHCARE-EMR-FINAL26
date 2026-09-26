@@ -16,7 +16,6 @@ const Register = () => {
     formState: { errors }
   } = useForm()
 
-  const watchRole = watch('role')
 
   const onSubmit = async (data) => {
     setLoading(true)
@@ -130,79 +129,14 @@ const Register = () => {
               >
                 <option value="">Select your role</option>
                 <option value="super_master_admin">Super Master Admin</option>
-                <option value="super_admin">Super Admin</option>
-                <option value="doctor">Doctor</option>
-                <option value="nurse">Nurse</option>
-                <option value="billing_staff">Billing Staff</option>
-                <option value="pharmacy_staff">Pharmacy Staff</option>
-                <option value="patient">Patient</option>
+                <option value="clinic_admin">Clinic Admin</option>
               </select>
               {errors.role && (
                 <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
               )}
             </div>
 
-            {watchRole === 'doctor' && (
-              <>
-                <div>
-                  <label className="form-label">Specialization</label>
-                  <input
-                    {...register('specialization', { required: 'Specialization is required for doctors' })}
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. Cardiology, Neurology"
-                  />
-                  {errors.specialization && (
-                    <p className="mt-1 text-sm text-red-600">{errors.specialization.message}</p>
-                  )}
-                </div>
 
-                <div>
-                  <label className="form-label">License Number</label>
-                  <input
-                    {...register('licenseNumber', { required: 'License number is required for doctors' })}
-                    type="text"
-                    className="form-input"
-                    placeholder="Medical license number"
-                  />
-                  {errors.licenseNumber && (
-                    <p className="mt-1 text-sm text-red-600">{errors.licenseNumber.message}</p>
-                  )}
-                </div>
-              </>
-            )}
-
-            {watchRole === 'patient' && (
-              <>
-                <div>
-                  <label className="form-label">Date of Birth</label>
-                  <input
-                    {...register('dateOfBirth', { required: 'Date of birth is required for patients' })}
-                    type="date"
-                    className="form-input"
-                  />
-                  {errors.dateOfBirth && (
-                    <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="form-label">Gender</label>
-                  <select
-                    {...register('gender', { required: 'Gender is required for patients' })}
-                    className="form-input"
-                  >
-                    <option value="">Select gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
-                  {errors.gender && (
-                    <p className="mt-1 text-sm text-red-600">{errors.gender.message}</p>
-                  )}
-                </div>
-              </>
-            )}
 
             <div>
               <label className="form-label">

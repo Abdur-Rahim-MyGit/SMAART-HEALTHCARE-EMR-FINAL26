@@ -125,40 +125,6 @@ export const SearchProvider = ({ children }) => {
           keywords: ['support', 'help', 'customer service', 'assistance']
         }
       ],
-      super_admin: [
-        { 
-          id: 'users', 
-          title: 'Staff Management', 
-          description: 'Manage clinic staff', 
-          path: '/users', 
-          category: 'Staff',
-          keywords: ['staff', 'users', 'employees', 'team']
-        },
-        { 
-          id: 'patients', 
-          title: 'Patients', 
-          description: 'View and manage patients', 
-          path: '/patients', 
-          category: 'Patients',
-          keywords: ['patients', 'patient', 'medical records']
-        },
-        { 
-          id: 'appointments', 
-          title: 'Appointments', 
-          description: 'Manage appointments', 
-          path: '/appointments', 
-          category: 'Scheduling',
-          keywords: ['appointments', 'appointment', 'schedule', 'booking']
-        },
-        { 
-          id: 'billing', 
-          title: 'Billing', 
-          description: 'Billing and payments', 
-          path: '/billing', 
-          category: 'Financial',
-          keywords: ['billing', 'payment', 'financial', 'invoice']
-        }
-      ],
       clinic_admin: [
         { 
           id: 'patients', 
@@ -185,80 +151,6 @@ export const SearchProvider = ({ children }) => {
           keywords: ['doctors', 'doctor', 'physicians']
         }
       ],
-      doctor: [
-        { 
-          id: 'appointments', 
-          title: 'Appointments', 
-          description: 'My appointments', 
-          path: '/appointments', 
-          category: 'Scheduling',
-          keywords: ['appointments', 'appointment', 'schedule', 'patients']
-        },
-        { 
-          id: 'patients', 
-          title: 'Patients', 
-          description: 'My patients', 
-          path: '/patients', 
-          category: 'Patients',
-          keywords: ['patients', 'patient', 'medical records']
-        }
-      ],
-      nurse: [
-        { 
-          id: 'appointments', 
-          title: 'Appointments', 
-          description: 'Patient appointments', 
-          path: '/appointments', 
-          category: 'Scheduling',
-          keywords: ['appointments', 'appointment', 'schedule']
-        },
-        { 
-          id: 'patients', 
-          title: 'Patients', 
-          description: 'Patient records', 
-          path: '/patients', 
-          category: 'Patients',
-          keywords: ['patients', 'patient', 'medical records']
-        }
-      ],
-      billing_staff: [
-        { 
-          id: 'billing', 
-          title: 'Billing', 
-          description: 'Billing management', 
-          path: '/billing', 
-          category: 'Financial',
-          keywords: ['billing', 'payment', 'invoice', 'financial']
-        }
-      ],
-      pharmacy_staff: [
-        { 
-          id: 'pharmacy', 
-          title: 'Pharmacy', 
-          description: 'Pharmacy management', 
-          path: '/pharmacy', 
-          category: 'Pharmacy',
-          keywords: ['pharmacy', 'medications', 'drugs', 'prescriptions']
-        }
-      ],
-      patient: [
-        { 
-          id: 'appointments', 
-          title: 'My Appointments', 
-          description: 'View my appointments', 
-          path: '/appointments', 
-          category: 'Personal',
-          keywords: ['appointments', 'appointment', 'my appointments', 'schedule']
-        },
-        { 
-          id: 'reports', 
-          title: 'Medical Reports', 
-          description: 'My medical reports', 
-          path: '/reports', 
-          category: 'Personal',
-          keywords: ['reports', 'medical reports', 'test results', 'documents']
-        }
-      ]
     };
 
     // Add quick actions

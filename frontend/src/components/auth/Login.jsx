@@ -386,8 +386,8 @@ const Login = () => {
               )}
             </button>
 
-            {/* Developer Login Button - Only for User Login at Credentials Step */}
-            {loginType === "user" && otpStep === "credentials" && (
+            {/* Developer Login Button - development builds only (the API refuses password-only login in production) */}
+            {import.meta.env.DEV && loginType === "user" && otpStep === "credentials" && (
               <button
                 type="button"
                 onClick={handleDeveloperLogin}

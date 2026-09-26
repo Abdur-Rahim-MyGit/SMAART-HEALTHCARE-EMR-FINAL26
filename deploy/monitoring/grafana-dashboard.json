@@ -1,0 +1,22 @@
+{
+  "title": "SMAART EMR",
+  "uid": "smaart-emr",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "type": "timeseries", "title": "Requests / s", "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 }, "targets": [{ "expr": "sum(rate(smaart_http_request_duration_seconds_count[1m]))", "legendFormat": "rps" }] },
+    { "type": "timeseries", "title": "Error rate (5xx)", "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 }, "targets": [{ "expr": "sum(rate(smaart_http_errors_total[5m])) / sum(rate(smaart_http_request_duration_seconds_count[5m]))", "legendFormat": "5xx ratio" }] },
+    { "type": "timeseries", "title": "Latency p50 / p95 / p99", "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 }, "targets": [
+      { "expr": "histogram_quantile(0.5, sum(rate(smaart_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+      { "expr": "histogram_quantile(0.95, sum(rate(smaart_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+      { "expr": "histogram_quantile(0.99, sum(rate(smaart_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }] },
+    { "type": "timeseries", "title": "Auth failures", "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 }, "targets": [{ "expr": "sum(rate(smaart_auth_failures_total[5m])) by (kind)", "legendFormat": "{{kind}}" }] },
+    { "type": "stat", "title": "Outbox pending", "gridPos": { "x": 8, "y": 8, "w": 4, "h": 8 }, "targets": [{ "expr": "smaart_outbox_pending" }] },
+    { "type": "stat", "title": "Dead-letter queue", "gridPos": { "x": 12, "y": 8, "w": 4, "h": 8 }, "targets": [{ "expr": "rabbitmq_queue_messages{queue=\"smaart.dlq\"}" }] },
+    { "type": "timeseries", "title": "Worker failures", "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 }, "targets": [{ "expr": "sum(rate(smaart_worker_failures_total[5m])) by (queue)", "legendFormat": "{{queue}}" }] },
+    { "type": "timeseries", "title": "PostgreSQL connections", "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 }, "targets": [{ "expr": "pg_stat_activity_count", "legendFormat": "connections" }] },
+    { "type": "timeseries", "title": "Redis memory", "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 }, "targets": [{ "expr": "redis_memory_used_bytes", "legendFormat": "used" }] },
+    { "type": "timeseries", "title": "RabbitMQ queue depth", "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 }, "targets": [{ "expr": "rabbitmq_queue_messages", "legendFormat": "{{queue}}" }] },
+    { "type": "timeseries", "title": "Node.js heap / event loop lag", "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 }, "targets": [{ "expr": "smaart_nodejs_heap_size_used_bytes", "legendFormat": "heap used" }, { "expr": "smaart_nodejs_eventloop_lag_seconds", "legendFormat": "event loop lag" }] }
+  ]
+}

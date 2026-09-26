@@ -1,2 +1,9 @@
-# Ignore all node_modules folders
 node_modules/
+.env
+.env.*
+!.env.example
+storage/
+.test-storage/
+coverage/
+*.log
+test-results/

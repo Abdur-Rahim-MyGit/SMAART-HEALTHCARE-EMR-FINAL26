@@ -1,10 +1,12 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:5001/api";
+// Same-origin by default (Vite dev proxy / nginx). Override with VITE_API_URL.
+const API_BASE_URL = import.meta.env.VITE_API_URL || "/api/v1";
 
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true, // refresh token travels in an httpOnly cookie
   headers: {
     "Content-Type": "application/json",
   },
@@ -22,11 +24,28 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
+// Response interceptor: on 401 try one silent refresh (rotating httpOnly cookie), then retry.
+let refreshPromise = null;
+const AUTH_PATHS = ["/auth/login", "/auth/clinic-login", "/auth/refresh", "/auth/request-login-otp", "/auth/verify-login-otp", "/auth/logout"];
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
+  async (error) => {
+    const original = error.config || {};
+    const status = error.response?.status;
+    const isAuthCall = AUTH_PATHS.some((p) => (original.url || "").includes(p));
+    if (status === 401 && !original._retried && !isAuthCall && localStorage.getItem("token")) {
+      original._retried = true;
+      try {
+        refreshPromise = refreshPromise || axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true }).finally(() => { refreshPromise = null; });
+        const { data } = await refreshPromise;
+        if (data?.token) {
+          localStorage.setItem("token", data.token);
+          original.headers = { ...(original.headers || {}), Authorization: `Bearer ${data.token}` };
+          return api(original);
+        }
+      } catch (_) {
+        // fall through to logout
+      }
       localStorage.removeItem("token");
       window.location.href = "/login";
     }
@@ -46,6 +65,8 @@ export const authAPI = {
   verifyResetOTP: (data) => api.post("/auth/verify-reset-otp", data),
   resetPassword: (data) => api.post("/auth/reset-password", data),
   me: () => api.get("/auth/me"),
+  logout: (token) => api.post("/auth/logout", {}, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
+  refresh: () => api.post("/auth/refresh"),
 };
 
 // Users API
@@ -71,15 +92,6 @@ export const clinicsAPI = {
   getExpiringSoon: (days = 30) => api.get(`/clinics/expiring/${days}`),
   getExpired: () => api.get("/clinics/expired/list"),
 
-  // Additional users management
-  getUsers: (id) => api.get(`/clinics/${id}/users`),
-  addUser: (id, userData) => api.post(`/clinics/${id}/users`, userData),
-  updateUser: (id, userId, userData) =>
-    api.put(`/clinics/${id}/users/${userId}`, userData),
-  deleteUser: (id, userId) => api.delete(`/clinics/${id}/users/${userId}`),
-
-  // Debug endpoint
-  debug: (id) => api.get(`/clinics/${id}/debug`),
 };
 
 // Medical Images API

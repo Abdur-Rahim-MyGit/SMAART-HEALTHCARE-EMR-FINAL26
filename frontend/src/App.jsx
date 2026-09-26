@@ -19,20 +19,12 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 
 // Dashboard Components
 import SuperMasterAdminDashboard from "./components/dashboards/SuperMasterAdminDashboard";
-import SuperAdminDashboard from "./components/dashboards/SuperAdminDashboard";
-import DoctorDashboard from "./components/dashboards/DoctorDashboard";
-import NurseDashboard from "./components/dashboards/NurseDashboard";
-import BillingDashboard from "./components/dashboards/BillingDashboard";
-import PharmacyDashboard from "./components/dashboards/PharmacyDashboard";
-import PatientDashboard from "./components/dashboards/PatientDashboard";
 import ClinicDashboard from "./components/dashboards/ClinicDashboard";
 
 // Feature Components
 import Clinics from "./components/clinics/Clinics";
-import Users from "./components/users/Users";
 import Patients from "./components/patients/Patients";
 import Appointments from "./components/appointments/Appointments";
-import DoctorsManagement from "./components/pages/DoctorsManagement";
 import Doctors from "./components/pages/Doctors";
 import NurseManagement from "./components/pages/NurseManagement";
 import PrescriptionManagement from "./components/pages/PrescriptionManagement";
@@ -126,20 +118,8 @@ function App() {
     switch (role) {
       case "super_master_admin":
         return <SuperMasterAdminDashboard />;
-      case "super_admin":
-        return <SuperAdminDashboard />;
       case "clinic_admin":
         return <ClinicDashboard />;
-      case "doctor":
-        return <DoctorDashboard />;
-      case "nurse":
-        return <NurseDashboard />;
-      case "billing_staff":
-        return <BillingDashboard />;
-      case "pharmacy_staff":
-        return <PharmacyDashboard />;
-      case "patient":
-        return <PatientDashboard />;
       default:
         return (
           <div className="p-8 text-center">
@@ -174,26 +154,10 @@ function App() {
             <Route path="/patients/:patientId" element={<PatientView />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/support" element={<CustomerSupport />} />
-            <Route path="/billing-insurance" element={<BillingInsurance />} />
             <Route path="/clinic-edit" element={<ClinicEdit />} />
           </>
         )}
 
-        {/* Super Admin Routes */}
-        {user.role === "super_admin" && (
-          <>
-            <Route path="/users" element={<Users />} />
-            <Route path="/patients" element={<Patients />} />
-            <Route path="/patients/:patientId" element={<PatientView />} />
-            <Route path="/appointments" element={<Appointments />} />
-            <Route path="/doctors" element={<Doctors />} />
-            <Route path="/referrals" element={<Referrals />} />
-            <Route path="/reports-analytics" element={<ReportsAnalytics />} />
-            <Route path="/billing-insurance" element={<BillingInsurance />} />
-            <Route path="/pharmacy" element={<PharmacyManagement />} />
-            <Route path="/settings" element={<Settings />} />
-          </>
-        )}
 
         {/* Clinic Admin Routes */}
         {user.role === "clinic_admin" && (
@@ -215,26 +179,8 @@ function App() {
           </>
         )}
 
-        {/* Doctor/Nurse Routes */}
-        {(user.role === "doctor" ||
-          user.role === "nurse" ||
-          user.role === "super_admin") && (
-          <>
-            <Route path="/appointments" element={<Appointments />} />
-            <Route path="/patients" element={<Patients />} />
-            <Route path="/patients/:patientId" element={<PatientView />} />
-          </>
-        )}
 
-        {/* Billing Staff Routes */}
-        {user.role === "billing_staff" && (
-          <Route path="/billing-insurance" element={<BillingInsurance />} />
-        )}
 
-        {/* Patient Routes */}
-        {user.role === "patient" && (
-          <Route path="/appointments" element={<Appointments />} />
-        )}
 
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

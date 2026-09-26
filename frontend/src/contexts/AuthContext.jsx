@@ -53,6 +53,8 @@ export const AuthProvider = ({ children }) => {
   }
 
   const logout = () => {
+    const token = localStorage.getItem('token')
+    if (token) authAPI.logout(token).catch(() => {}) // best effort: revoke the server session
     localStorage.removeItem('token')
     dispatch({ type: 'LOGOUT' })
   }

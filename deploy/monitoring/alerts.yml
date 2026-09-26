@@ -1,0 +1,52 @@
+groups:
+  - name: smaart-emr
+    rules:
+      - alert: ApiDown
+        expr: up{job="smaart-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "SMAART API is not being scraped" }
+      - alert: HighErrorRate
+        expr: sum(rate(smaart_http_errors_total[5m])) / sum(rate(smaart_http_request_duration_seconds_count[5m])) > 0.01
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "More than 1% of requests return 5xx" }
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(smaart_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "p95 API latency above 1s" }
+      - alert: AuthorizationFailureSpike
+        expr: sum(rate(smaart_auth_failures_total{kind="forbidden"}[5m])) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained 403s: possible cross-clinic probing" }
+      - alert: OutboxBacklog
+        expr: smaart_outbox_pending > 1000
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Outbox events are not being published" }
+      - alert: DeadLetterQueueNotEmpty
+        expr: rabbitmq_queue_messages{queue="smaart.dlq"} > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Messages in the dead-letter queue need attention" }
+      - alert: WorkerFailures
+        expr: increase(smaart_worker_failures_total[15m]) > 20
+        labels: { severity: warning }
+        annotations: { summary: "Worker handlers are failing repeatedly" }
+      - alert: PostgresConnectionsHigh
+        expr: pg_stat_activity_count > 0.8 * pg_settings_max_connections
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "PostgreSQL connection pool nearly exhausted" }
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Redis memory above 90%" }
+      - alert: MongoDown
+        expr: mongodb_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "MongoDB unreachable" }
