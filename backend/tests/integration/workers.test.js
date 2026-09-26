@@ -4,10 +4,8 @@ const net = require('net');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { api, resetData, adminToken, createClinic, createPatient } = require('../helpers/api');
-const { getKnex } = require('../../src/infrastructure/postgres/knex');
-const { withSystem } = require('../../src/infrastructure/postgres/tenant');
-const doc = (id) => withSystem((trx) => trx('documents').where({ id }).first(), getKnex());
+const { api, raw, resetData, adminToken, createClinic, createPatient } = require('../helpers/api');
+const doc = (id) => raw('documents').findOne({ _id: id });
 const { documentHandler } = require('../../src/workers/consumers/documents');
 const { exportDocuments } = require('../../src/workers/backupExport');
 const { notificationHandler } = require('../../src/workers/consumers/notifications');
@@ -44,13 +42,13 @@ describe('workers', () => {
   it('marks clean uploads and quarantines infected ones so they can no longer be accessed', async () => {
     const clean = (await api().post('/api/v1/documents').set(auth(c.adminToken)).field('patientId', p._id).attach('file', PNG, 'ok.png')).body.data;
     await documentHandler({ type: 'document.uploaded', aggregateId: clean._id, clinicId: c.clinic._id });
-    expect((await doc(clean._id)).scan_status).toBe('clean');
+    expect((await doc(clean._id)).scanStatus).toBe('clean');
     const eicar = Buffer.concat([PNG, Buffer.from('X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*')]);
     const bad = (await api().post('/api/v1/documents').set(auth(c.adminToken)).field('patientId', p._id).attach('file', eicar, 'bad.png')).body.data;
     expect((await api().get(`/api/v1/documents/${bad._id}/access`).set(auth(c.adminToken))).status).toBe(200);
     await documentHandler({ type: 'document.uploaded', aggregateId: bad._id, clinicId: c.clinic._id });
     const row = await doc(bad._id);
-    expect(row.scan_status).toBe('infected');
+    expect(row.scanStatus).toBe('infected');
     expect(row.status).toBe('quarantined');
     expect((await api().get(`/api/v1/documents/${bad._id}/access`).set(auth(c.adminToken))).status).toBe(403);
     expect((await api().get('/api/v1/audit?action=DOCUMENT_QUARANTINED').set(auth(c.adminToken))).body.data.length).toBe(1);
@@ -63,7 +61,7 @@ describe('workers', () => {
     expect(r.count).toBeGreaterThanOrEqual(1);
     expect(r.failed).toBe(0);
     const manifest = JSON.parse(await fs.readFile(r.manifest, 'utf8'));
-    expect(manifest.documents[0]).toHaveProperty('checksumSha256' in manifest.documents[0] ? 'checksumSha256' : 'checksum_sha256');
+    expect(manifest.documents[0]).toHaveProperty('checksumSha256');
     const files = await fs.readdir(path.join(dir, r.day, 'files'));
     expect(files.length).toBe(r.copied);
     expect(r.copied).toBe(r.count);

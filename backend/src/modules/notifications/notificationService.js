@@ -1,49 +1,49 @@
 'use strict';
-const { getKnex } = require('../../infrastructure/postgres/knex');
-const { withTenant, withSystem } = require('../../infrastructure/postgres/tenant');
+const { withTenant, withSystem } = require('../../infrastructure/mongodb/tenant');
 const { serializeRow } = require('../../common/utils/serialize');
 const { notFound } = require('../../common/errors/AppError');
 const { incrementUnread, resetUnread, getUnread } = require('../../infrastructure/redis/counters');
 
 /** Creates a notification for one user (or all admins of a clinic) — used by workers. */
 async function notify({ clinicId, userId, type, title, message, data = {} }) {
-  return withSystem(async (trx) => {
+  return withSystem(async (db) => {
     let targets = userId ? [userId] : [];
-    if (!userId && clinicId) targets = (await trx('users').where({ clinic_id: clinicId, is_active: true }).whereNull('deleted_at').select('id')).map((u) => u.id);
+    if (!userId && clinicId) targets = (await db.c('users').find({ clinicId, isActive: true }, { projection: { _id: 1 } })).map((u) => u._id);
     for (const uid of targets) {
-      await trx('notifications').insert({ clinic_id: clinicId || null, user_id: uid, type, title, message, data: JSON.stringify(data) });
+      await db.c('notifications').insertOne({ clinicId: clinicId || null, userId: uid, type, title, message, data, readAt: null });
       await incrementUnread(uid);
     }
     return targets.length;
-  }, getKnex());
+  });
 }
 
+/** Notifications are always scoped to the authenticated user, on top of the clinic scope. */
 async function list(scope, { limit = 20, offset = 0, unreadOnly = false }) {
-  return withTenant(scope, async (trx) => {
-    let q = trx('notifications').where('user_id', scope.userId);
-    if (unreadOnly) q = q.whereNull('read_at');
-    const rows = await q.orderBy('created_at', 'desc').limit(limit).offset(offset);
+  return withTenant(scope, async (db) => {
+    const col = db.c('notifications');
+    const filter = { userId: scope.userId, ...(unreadOnly ? { readAt: null } : {}) };
+    const rows = await col.find(filter, { sort: { createdAt: -1 }, limit, skip: offset });
     let unread = await getUnread(scope.userId);
     if (unread === null) {
-      unread = Number((await trx('notifications').where('user_id', scope.userId).whereNull('read_at').count({ c: '*' }))[0].c);
+      unread = await col.count({ userId: scope.userId, readAt: null });
       await resetUnread(scope.userId, unread);
     }
-    return { data: rows.map((r) => ({ ...serializeRow(r), read: !!r.read_at, time: r.created_at })), unreadCount: unread };
-  }, getKnex());
+    return { data: rows.map((r) => ({ ...serializeRow(r), read: !!r.readAt, time: r.createdAt })), unreadCount: unread };
+  });
 }
 
 async function markRead(scope, id) {
-  return withTenant(scope, async (trx) => {
-    const rows = await trx('notifications').where({ id, user_id: scope.userId }).whereNull('read_at').update({ read_at: trx.fn.now() }).returning('id');
-    if (!rows.length) { const exists = await trx('notifications').where({ id, user_id: scope.userId }).first('id'); if (!exists) throw notFound('Notification'); return; }
-    const unread = Number((await trx('notifications').where('user_id', scope.userId).whereNull('read_at').count({ c: '*' }))[0].c);
-    await resetUnread(scope.userId, unread);
-  }, getKnex());
+  return withTenant(scope, async (db) => {
+    const col = db.c('notifications');
+    const updated = await col.updateOne({ _id: id, userId: scope.userId, readAt: null }, { readAt: new Date() });
+    if (!updated) { if (!(await col.exists({ _id: id, userId: scope.userId }))) throw notFound('Notification'); return; }
+    await resetUnread(scope.userId, await col.count({ userId: scope.userId, readAt: null }));
+  });
 }
 async function markAllRead(scope) {
-  return withTenant(scope, async (trx) => {
-    await trx('notifications').where({ user_id: scope.userId }).whereNull('read_at').update({ read_at: trx.fn.now() });
+  return withTenant(scope, async (db) => {
+    await db.c('notifications').updateMany({ userId: scope.userId, readAt: null }, { readAt: new Date() });
     await resetUnread(scope.userId, 0);
-  }, getKnex());
+  });
 }
 module.exports = { notify, list, markRead, markAllRead };

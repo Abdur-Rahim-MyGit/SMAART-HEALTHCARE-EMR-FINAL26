@@ -1,52 +1,67 @@
 'use strict';
-const mongoose = require('mongoose');
+/**
+ * Single MongoDB client (native driver). MongoDB is the only database of the EMR:
+ * structured clinical data, identities, audit, and flexible documents all live here.
+ * Multi-document transactions need a replica set (a single-node replica set is fine).
+ */
+const { MongoClient } = require('mongodb');
 const { config } = require('../../config');
 const { getLogger } = require('../../common/logging/logger');
 
-let connected = false;
+let client;
+let db;
+let transactionsSupported = false;
 
 async function connectMongo() {
+  if (client) return db;
   const env = config();
-  if (!env.MONGODB_URI) {
-    if (env.MONGODB_REQUIRED) throw new Error('MONGODB_URI is required');
-    getLogger().warn('MONGODB_URI not set: MongoDB-backed modules are disabled');
-    return null;
-  }
-  mongoose.set('strictQuery', true);
-  mongoose.set('sanitizeFilter', true); // blocks operator injection in filters
-  await mongoose.connect(env.MONGODB_URI, {
-    maxPoolSize: 10,
+  client = new MongoClient(env.MONGODB_URI, {
+    maxPoolSize: env.MONGODB_POOL_MAX,
+    minPoolSize: env.MONGODB_POOL_MIN,
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000,
-    autoIndex: !env.isProduction,
+    retryWrites: true,
+    retryReads: true,
+    appName: env.APP_NAME,
   });
-  connected = true;
-  mongoose.connection.on('error', (err) => getLogger().error({ err }, 'mongodb error'));
-  mongoose.connection.on('disconnected', () => {
-    connected = false;
-    getLogger().warn('mongodb disconnected');
-  });
-  mongoose.connection.on('reconnected', () => {
-    connected = true;
-  });
-  getLogger().info({ db: mongoose.connection.name }, 'mongodb connected');
-  return mongoose.connection;
+  await client.connect();
+  db = client.db(env.MONGODB_DB_NAME || undefined);
+  const hello = await db.admin().command({ hello: 1 });
+  transactionsSupported = !!hello.setName || !!hello.msg;
+  if (!transactionsSupported) {
+    if (env.isProduction) throw new Error('MongoDB must be a replica set in production (multi-document transactions)');
+    getLogger().warn('MongoDB is not a replica set: multi-document transactions are disabled (development only)');
+  }
+  getLogger().info({ db: db.databaseName, transactions: transactionsSupported }, 'mongodb connected');
+  return db;
 }
 
+function getDb() {
+  if (!db) throw new Error('MongoDB is not connected');
+  return db;
+}
+function getClient() {
+  if (!client) throw new Error('MongoDB is not connected');
+  return client;
+}
 function isMongoConnected() {
-  return connected && mongoose.connection.readyState === 1;
+  return !!client && !!db;
 }
 function isMongoConfigured() {
   return !!config().MONGODB_URI;
 }
+function supportsTransactions() {
+  return transactionsSupported;
+}
 async function pingMongo() {
   if (!isMongoConnected()) return false;
-  await mongoose.connection.db.admin().ping();
+  await db.admin().ping();
   return true;
 }
 async function closeMongo() {
-  if (mongoose.connection.readyState !== 0) await mongoose.connection.close();
-  connected = false;
+  if (client) await client.close();
+  client = undefined;
+  db = undefined;
 }
 
-module.exports = { connectMongo, isMongoConnected, isMongoConfigured, pingMongo, closeMongo, mongoose };
+module.exports = { connectMongo, getDb, getClient, isMongoConnected, isMongoConfigured, supportsTransactions, pingMongo, closeMongo };

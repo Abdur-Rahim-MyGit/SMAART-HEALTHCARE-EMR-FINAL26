@@ -1,7 +1,5 @@
 'use strict';
-const { getKnex } = require('../../infrastructure/postgres/knex');
-const { withTenant } = require('../../infrastructure/postgres/tenant');
-const { BaseRepository } = require('../../infrastructure/postgres/BaseRepository');
+const { withTenant, resolveClinicId } = require('../../infrastructure/mongodb/tenant');
 const { ROLES } = require('../../common/security/rbac');
 const { notFound, badRequest, conflict } = require('../../common/errors/AppError');
 const { serializeRow, ref } = require('../../common/utils/serialize');
@@ -11,158 +9,100 @@ const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository')
 const patients = require('../patients/patientService');
 const practitioners = require('../practitioners/practitionerService');
 
-const repo = new BaseRepository('appointments');
-
 function combine(date, time) {
   if (!date) return null;
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  if (time && /^\d{1,2}:\d{2}/.test(time)) {
-    const [h, m] = time.split(':').map(Number);
-    const local = new Date(d);
-    local.setHours(h, m, 0, 0);
-    return local;
-  }
+  if (time && /^\d{1,2}:\d{2}/.test(time)) { const [h, m] = time.split(':').map(Number); d.setHours(h, m, 0, 0); }
   return d;
 }
-
-function toRow(input) {
-  const row = {};
+function toDoc(input) {
+  const d = {};
   const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : combine(input.date || input.appointmentDate, input.time);
-  if (scheduledAt) row.scheduled_at = scheduledAt;
-  if (input.time !== undefined) row.scheduled_time = input.time;
-  if (input.appointmentType !== undefined) row.appointment_type = input.appointmentType;
-  else if (input.type !== undefined) row.appointment_type = input.type;
-  if (input.duration !== undefined) row.duration_minutes = Number(input.duration) || 30;
-  for (const k of ['status', 'priority', 'reason', 'notes', 'instructions', 'location']) if (input[k] !== undefined) row[k] = input[k];
-  if (input.isVirtual !== undefined) row.is_virtual = !!input.isVirtual;
-  if (input.meetingLink !== undefined) row.meeting_link = input.meetingLink;
-  if (input.followUpRequired !== undefined) row.follow_up_required = !!input.followUpRequired;
-  if (input.followUpDate !== undefined) row.follow_up_date = input.followUpDate || null;
-  if (input.provider !== undefined) row.provider_name = input.provider;
-  if (input.patientId !== undefined) row.patient_id = input.patientId;
-  if (input.doctorId !== undefined) row.practitioner_id = input.doctorId || null;
-  else if (input.practitionerId !== undefined) row.practitioner_id = input.practitionerId || null;
-  return row;
+  if (scheduledAt) d.scheduledAt = scheduledAt;
+  if (input.time !== undefined) d.scheduledTime = input.time;
+  if (input.appointmentType !== undefined) d.appointmentType = input.appointmentType; else if (input.type !== undefined) d.appointmentType = input.type;
+  if (input.duration !== undefined) d.durationMinutes = Number(input.duration) || 30;
+  for (const k of ['status', 'priority', 'reason', 'notes', 'instructions', 'location']) if (input[k] !== undefined) d[k] = input[k];
+  if (input.isVirtual !== undefined) d.isVirtual = !!input.isVirtual;
+  if (input.meetingLink !== undefined) d.meetingLink = input.meetingLink;
+  if (input.followUpRequired !== undefined) d.followUpRequired = !!input.followUpRequired;
+  if (input.followUpDate !== undefined) d.followUpDate = input.followUpDate ? new Date(input.followUpDate) : null;
+  if (input.provider !== undefined) d.providerName = input.provider;
+  if (input.patientId !== undefined) d.patientId = input.patientId;
+  if (input.doctorId !== undefined) d.practitionerId = input.doctorId || null; else if (input.practitionerId !== undefined) d.practitionerId = input.practitionerId || null;
+  return d;
 }
-
 function serialize(r, { patient, doctor, clinic } = {}) {
-  const s = serializeRow(r);
-  return {
-    ...s,
-    date: r.scheduled_at,
-    appointmentDate: r.scheduled_at,
-    time: r.scheduled_time,
-    duration: r.duration_minutes,
-    type: r.appointment_type,
-    provider: r.provider_name,
-    patientId: patient || ref(r.patient_id),
-    patientName: patient ? patient.fullName : null,
-    phone: patient ? patient.phone : null,
-    email: patient ? patient.email : null,
-    doctorId: doctor || (r.practitioner_id ? ref(r.practitioner_id) : null),
-    practitionerId: r.practitioner_id,
-    doctorName: doctor ? doctor.fullName : r.provider_name,
-    department: doctor ? doctor.specialty : null,
-    clinicId: clinic ? ref(r.clinic_id, clinic) : r.clinic_id,
-  };
+  return { ...serializeRow(r), date: r.scheduledAt, appointmentDate: r.scheduledAt, time: r.scheduledTime, duration: r.durationMinutes, type: r.appointmentType, provider: r.providerName, patientId: patient || ref(r.patientId), patientName: patient ? patient.fullName : null, phone: patient ? patient.phone : null, email: patient ? patient.email : null, doctorId: doctor || (r.practitionerId ? ref(r.practitionerId) : null), doctorName: doctor ? doctor.fullName : r.providerName, department: doctor ? doctor.specialty : null, clinicId: clinic ? ref(r.clinicId, clinic) : r.clinicId };
 }
-
-async function hydrate(trx, rows) {
+async function hydrate(db, rows) {
   if (!rows.length) return [];
-  const [pmap, dmap, clinics] = await Promise.all([patients.refsFor(trx, rows.map((r) => r.patient_id)), practitioners.refsFor(trx, rows.map((r) => r.practitioner_id)), trx('clinics').whereIn('id', [...new Set(rows.map((r) => r.clinic_id))]).select('id', 'name', 'type', 'city', 'state', 'phone')]);
-  const cmap = Object.fromEntries(clinics.map((c) => [c.id, { name: c.name, type: c.type, city: c.city, state: c.state, phone: c.phone }]));
-  return rows.map((r) => serialize(r, { patient: pmap[r.patient_id], doctor: dmap[r.practitioner_id], clinic: cmap[r.clinic_id] }));
+  const [pmap, dmap, clinics] = await Promise.all([patients.refsFor(db, rows.map((r) => r.patientId)), practitioners.refsFor(db, rows.map((r) => r.practitionerId)), db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId))] } }, { projection: { name: 1, type: 1, city: 1, state: 1, phone: 1 } })]);
+  const cmap = Object.fromEntries(clinics.map((c) => [c._id, { name: c.name, type: c.type, city: c.city, state: c.state, phone: c.phone }]));
+  return rows.map((r) => serialize(r, { patient: pmap[r.patientId], doctor: dmap[r.practitionerId], clinic: cmap[r.clinicId] }));
 }
-
 async function list(scope, { patientId, doctorId, status, from, to, clinicId, page, limit, offset }) {
-  return withTenant(scope, async (trx) => {
-    let q = repo.scoped(trx, scope);
-    if (clinicId && scope.role === ROLES.SUPER_MASTER_ADMIN) q = q.where('clinic_id', clinicId);
-    if (patientId) q = q.where('patient_id', patientId);
-    if (doctorId) q = q.where('practitioner_id', doctorId);
-    if (status) q = q.where('status', status);
-    if (from) q = q.where('scheduled_at', '>=', from);
-    if (to) q = q.where('scheduled_at', '<=', to);
-    const total = Number((await q.clone().count({ c: '*' }))[0].c);
-    const rows = await q.orderBy('scheduled_at', 'desc').limit(limit).offset(offset);
-    return { data: await hydrate(trx, rows), total, page, limit };
-  }, getKnex());
+  return withTenant(scope, async (db) => {
+    const filter = {};
+    if (clinicId && scope.role === ROLES.SUPER_MASTER_ADMIN) filter.clinicId = clinicId;
+    if (patientId) filter.patientId = patientId;
+    if (doctorId) filter.practitionerId = doctorId;
+    if (status) filter.status = status;
+    if (from || to) filter.scheduledAt = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
+    const col = db.c('appointments');
+    const [rows, total] = await Promise.all([col.find(filter, { sort: { scheduledAt: -1 }, limit, skip: offset }), col.count(filter)]);
+    return { data: await hydrate(db, rows), total, page, limit };
+  });
 }
-
 async function getById(scope, id) {
-  return withTenant(scope, async (trx) => {
-    const row = await repo.findById(trx, scope, id);
-    if (!row) throw notFound('Appointment');
-    const [a] = await hydrate(trx, [row]);
-    return a;
-  }, getKnex());
+  return withTenant(scope, async (db) => { const row = await db.c('appointments').findById(id); if (!row) throw notFound('Appointment'); return (await hydrate(db, [row]))[0]; });
 }
-
 async function create(scope, input, ctx) {
-  const row = toRow(input);
-  if (!row.patient_id) throw badRequest('patientId is required', 'VALIDATION_ERROR');
-  if (!row.scheduled_at) throw badRequest('A valid appointment date is required', 'VALIDATION_ERROR');
-  const work = () =>
-    withTenant(scope, async (trx) => {
-      const patient = await patients.assertPatient(trx, scope, row.patient_id);
-      const clinicId = repo.resolveClinicId(scope, input.clinicId || patient.clinic_id);
-      if (String(clinicId) !== String(patient.clinic_id)) throw badRequest('Patient does not belong to this clinic', 'CROSS_CLINIC_WRITE');
-      if (row.practitioner_id) {
-        const doc = await practitioners.assertPractitioner(trx, scope, row.practitioner_id);
-        if (String(doc.clinic_id) !== String(clinicId)) throw badRequest('Practitioner does not belong to this clinic', 'CROSS_CLINIC_WRITE');
-        if (!row.provider_name) row.provider_name = doc.full_name;
-      }
-      let created;
-      try {
-        [created] = await trx('appointments').insert({ ...row, clinic_id: clinicId, created_by: scope.userId, updated_by: scope.userId }).returning('*');
-      } catch (err) {
-        if (err.code === '23505') throw conflict('The practitioner already has an appointment at this time', 'SLOT_TAKEN');
-        throw err;
-      }
-      await trx('patients').where({ id: patient.id }).update({ next_appointment_at: created.scheduled_at });
-      await auditInTrx(trx, { ...scope, clinicId }, { action: 'APPOINTMENT_CREATED', resourceType: 'appointment', resourceId: created.id, requestId: ctx.requestId, ip: ctx.ip });
-      await enqueueEvent(trx, { type: 'appointment.created', aggregateType: 'appointment', aggregateId: created.id, clinicId, actorId: scope.userId, payload: { patientId: patient.id, scheduledAt: created.scheduled_at } });
-      const [a] = await hydrate(trx, [created]);
-      return a;
-    }, getKnex());
-  return row.practitioner_id ? withLock(`appt:${row.practitioner_id}:${new Date(row.scheduled_at).toISOString()}`, 5000, work) : work();
-}
-
-async function update(scope, id, input, ctx) {
-  const row = toRow(input);
-  delete row.patient_id; // an appointment never moves between patients
-  return withTenant(scope, async (trx) => {
-    const current = await repo.findById(trx, scope, id);
-    if (!current) throw notFound('Appointment');
-    if (row.practitioner_id) {
-      const doc = await practitioners.assertPractitioner(trx, scope, row.practitioner_id);
-      if (String(doc.clinic_id) !== String(current.clinic_id)) throw badRequest('Practitioner does not belong to this clinic', 'CROSS_CLINIC_WRITE');
+  const d = toDoc(input);
+  if (!d.patientId) throw badRequest('patientId is required', 'VALIDATION_ERROR');
+  if (!d.scheduledAt) throw badRequest('A valid appointment date is required', 'VALIDATION_ERROR');
+  const work = () => withTenant(scope, async (db) => {
+    const patient = await patients.assertPatient(db, scope, d.patientId);
+    const clinicId = resolveClinicId(scope, input.clinicId || patient.clinicId);
+    if (String(clinicId) !== String(patient.clinicId)) throw badRequest('Patient does not belong to this clinic', 'CROSS_CLINIC_WRITE');
+    if (d.practitionerId) {
+      const doc = await practitioners.assertPractitioner(db, scope, d.practitionerId);
+      if (String(doc.clinicId) !== String(clinicId)) throw badRequest('Practitioner does not belong to this clinic', 'CROSS_CLINIC_WRITE');
+      if (!d.providerName) d.providerName = doc.fullName;
     }
-    let updated;
+    let created;
     try {
-      updated = await repo.update(trx, scope, id, row, { expectedVersion: input.version });
-    } catch (err) {
-      if (err.code === '23505') throw conflict('The practitioner already has an appointment at this time', 'SLOT_TAKEN');
-      throw err;
-    }
-    if (!updated) throw conflict('The appointment was modified by someone else. Reload and try again.', 'VERSION_CONFLICT');
-    const action = row.status === 'Cancelled' ? 'APPOINTMENT_CANCELLED' : 'APPOINTMENT_UPDATED';
-    await auditInTrx(trx, scope, { action, resourceType: 'appointment', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(row) } });
-    await enqueueEvent(trx, { type: row.status === 'Cancelled' ? 'appointment.cancelled' : 'appointment.updated', aggregateType: 'appointment', aggregateId: id, clinicId: updated.clinic_id, actorId: scope.userId, payload: { fields: Object.keys(row) } });
-    const [a] = await hydrate(trx, [updated]);
-    return a;
-  }, getKnex());
+      created = await db.c('appointments').insertOne({ appointmentType: 'General Consultation', durationMinutes: 30, status: 'Scheduled', priority: 'normal', isVirtual: false, followUpRequired: false, reminderSent: false, practitionerId: null, teleconsultationId: null, ...d, clinicId });
+    } catch (err) { if (err.code === 11000) throw conflict('The practitioner already has an appointment at this time', 'SLOT_TAKEN'); throw err; }
+    await db.c('patients').updateOne({ _id: patient._id }, { nextAppointmentAt: created.scheduledAt });
+    await auditInTrx(db, { ...scope, clinicId }, { action: 'APPOINTMENT_CREATED', resourceType: 'appointment', resourceId: created._id, requestId: ctx.requestId, ip: ctx.ip });
+    await enqueueEvent(db, { type: 'appointment.created', aggregateType: 'appointment', aggregateId: created._id, clinicId, actorId: scope.userId, payload: { patientId: patient._id, scheduledAt: created.scheduledAt } });
+    return (await hydrate(db, [created]))[0];
+  });
+  return d.practitionerId ? withLock(`appt:${d.practitionerId}:${new Date(d.scheduledAt).toISOString()}`, 5000, work) : work();
 }
-
-async function remove(scope, id, ctx) {
-  return withTenant(scope, async (trx) => {
-    const current = await repo.findById(trx, scope, id);
+async function update(scope, id, input, ctx) {
+  const d = toDoc(input);
+  delete d.patientId;
+  return withTenant(scope, async (db) => {
+    const current = await db.c('appointments').findById(id);
     if (!current) throw notFound('Appointment');
-    await repo.remove(trx, scope, id);
-    await auditInTrx(trx, scope, { action: 'APPOINTMENT_DELETED', resourceType: 'appointment', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
-    return true;
-  }, getKnex());
+    if (d.practitionerId) { const doc = await practitioners.assertPractitioner(db, scope, d.practitionerId); if (String(doc.clinicId) !== String(current.clinicId)) throw badRequest('Practitioner does not belong to this clinic', 'CROSS_CLINIC_WRITE'); }
+    let updated;
+    try { updated = await db.c('appointments').updateOne({ _id: id }, d, { expectedVersion: input.version }); } catch (err) { if (err.code === 11000) throw conflict('The practitioner already has an appointment at this time', 'SLOT_TAKEN'); throw err; }
+    if (!updated) throw conflict('The appointment was modified by someone else. Reload and try again.', 'VERSION_CONFLICT');
+    await auditInTrx(db, scope, { action: d.status === 'Cancelled' ? 'APPOINTMENT_CANCELLED' : 'APPOINTMENT_UPDATED', resourceType: 'appointment', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(d) } });
+    await enqueueEvent(db, { type: d.status === 'Cancelled' ? 'appointment.cancelled' : 'appointment.updated', aggregateType: 'appointment', aggregateId: id, clinicId: updated.clinicId, actorId: scope.userId, payload: { fields: Object.keys(d) } });
+    return (await hydrate(db, [updated]))[0];
+  });
 }
-
-module.exports = { list, getById, create, update, remove, hydrate, repo };
+async function remove(scope, id, ctx) {
+  return withTenant(scope, async (db) => {
+    const n = await db.c('appointments').softDelete({ _id: id });
+    if (!n) throw notFound('Appointment');
+    await auditInTrx(db, scope, { action: 'APPOINTMENT_DELETED', resourceType: 'appointment', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
+    return true;
+  });
+}
+module.exports = { list, getById, create, update, remove, hydrate };

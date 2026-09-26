@@ -1,79 +1,76 @@
 'use strict';
-const USER_COLUMNS = ['id', 'clinic_id', 'role', 'email', 'password_hash', 'first_name', 'last_name', 'full_name', 'phone', 'username', 'is_active', 'is_verified', 'last_login_at', 'failed_login_attempts', 'locked_until', 'password_changed_at', 'created_at', 'updated_at'];
+/** Data access for identities, sessions and OTP challenges (system scope). */
+const now = () => new Date();
 
-async function findUserByEmail(trx, email, role) {
-  let q = trx('users').select(USER_COLUMNS).whereRaw('lower(email::text) = lower(?)', [email]).whereNull('deleted_at');
-  if (role) q = q.where('role', role);
-  return q.first();
+async function findUserByEmail(db, email, role) {
+  const filter = { email: String(email).toLowerCase() };
+  if (role) filter.role = role;
+  return db.c('users').findOne(filter);
 }
-async function findUserById(trx, id) {
-  return trx('users').select(USER_COLUMNS).where({ id }).whereNull('deleted_at').first();
+async function findUserById(db, id) {
+  return db.c('users').findById(id);
 }
-async function findClinicForUser(trx, clinicId) {
-  return trx('clinics').where({ id: clinicId }).whereNull('deleted_at').first();
+async function findClinicForUser(db, clinicId) {
+  return db.c('clinics').findById(clinicId);
 }
-async function updateUser(trx, id, patch) {
-  await trx('users').where({ id }).update(patch);
+async function updateUser(db, id, patch) {
+  await db.c('users').updateOne({ _id: id }, patch);
 }
 
 // ---- sessions ----
-async function createSession(trx, { userId, tokenHash, userAgent, ip, expiresAt }) {
-  const [row] = await trx('auth_sessions').insert({ user_id: userId, refresh_token_hash: tokenHash, user_agent: (userAgent || '').slice(0, 300), ip, expires_at: expiresAt }).returning('*');
-  return row;
+async function createSession(db, { userId, tokenHash, userAgent, ip, expiresAt }) {
+  return db.c('auth_sessions').insertOne({ userId, refreshTokenHash: tokenHash, previousTokenHash: null, userAgent: (userAgent || '').slice(0, 300), ip: ip || null, lastUsedAt: now(), expiresAt, revokedAt: null, revokeReason: null });
 }
-async function findSessionById(trx, id) {
-  return trx('auth_sessions').where({ id }).first();
+async function findSessionByTokenHash(db, hash) {
+  return db.c('auth_sessions').findOne({ $or: [{ refreshTokenHash: hash }, { previousTokenHash: hash }] });
 }
-async function findSessionByTokenHash(trx, hash) {
-  return trx('auth_sessions').where({ refresh_token_hash: hash }).orWhere({ previous_token_hash: hash }).first();
+async function rotateSession(db, id, { newHash, oldHash, expiresAt }) {
+  await db.c('auth_sessions').updateOne({ _id: id }, { refreshTokenHash: newHash, previousTokenHash: oldHash, lastUsedAt: now(), expiresAt });
 }
-async function rotateSession(trx, id, { newHash, oldHash, expiresAt }) {
-  await trx('auth_sessions').where({ id }).update({ refresh_token_hash: newHash, previous_token_hash: oldHash, last_used_at: trx.fn.now(), expires_at: expiresAt });
+async function revokeSession(db, id, reason) {
+  await db.c('auth_sessions').updateOne({ _id: id, revokedAt: null }, { revokedAt: now(), revokeReason: reason });
 }
-async function revokeSession(trx, id, reason) {
-  await trx('auth_sessions').where({ id }).whereNull('revoked_at').update({ revoked_at: trx.fn.now(), revoke_reason: reason });
+async function revokeAllSessions(db, userId, reason, exceptId) {
+  const filter = { userId, revokedAt: null };
+  if (exceptId) filter._id = { $ne: exceptId };
+  const ids = (await db.c('auth_sessions').find(filter, { projection: { _id: 1 } })).map((s) => s._id);
+  if (ids.length) await db.c('auth_sessions').updateMany({ _id: { $in: ids } }, { revokedAt: now(), revokeReason: reason });
+  return ids;
 }
-async function revokeAllSessions(trx, userId, reason, exceptId) {
-  let q = trx('auth_sessions').where({ user_id: userId }).whereNull('revoked_at');
-  if (exceptId) q = q.whereNot({ id: exceptId });
-  await q.update({ revoked_at: trx.fn.now(), revoke_reason: reason });
+async function listSessions(db, userId) {
+  return db.c('auth_sessions').find({ userId }, { sort: { createdAt: -1 }, limit: 50, projection: { _id: 1, userAgent: 1, ip: 1, createdAt: 1, lastUsedAt: 1, expiresAt: 1, revokedAt: 1 } });
 }
-async function listSessions(trx, userId) {
-  return trx('auth_sessions').select('id', 'user_agent', 'ip', 'created_at', 'last_used_at', 'expires_at', 'revoked_at').where({ user_id: userId }).orderBy('created_at', 'desc').limit(50);
-}
-/** Live session joined to user, for the authenticate middleware. */
-async function findLiveSessionWithUser(trx, sessionId, userId) {
-  const row = await trx('auth_sessions as s')
-    .join('users as u', 'u.id', 's.user_id')
-    .leftJoin('clinics as c', 'c.id', 'u.clinic_id')
-    .select('s.id as session_id', 's.revoked_at', 's.expires_at', 'u.id', 'u.clinic_id', 'u.role', 'u.email', 'u.is_active', 'u.first_name', 'u.last_name', 'u.full_name', 'u.phone', 'u.username', 'u.deleted_at', 'c.is_active as clinic_active', 'c.validity_end as clinic_validity_end', 'c.deleted_at as clinic_deleted_at')
-    .where('s.id', sessionId)
-    .andWhere('s.user_id', userId)
-    .first();
-  if (!row || row.revoked_at || row.deleted_at || new Date(row.expires_at) < new Date()) return null;
-  if (row.clinic_id && (!row.clinic_active || row.clinic_deleted_at || new Date(row.clinic_validity_end) < new Date())) return null;
-  return { sessionId: row.session_id, user: row };
+/** Live session joined to its user and clinic, for the authenticate middleware. */
+async function findLiveSessionWithUser(db, sessionId, userId) {
+  const s = await db.c('auth_sessions').findOne({ _id: sessionId, userId });
+  if (!s || s.revokedAt || new Date(s.expiresAt) < now()) return null;
+  const user = await db.c('users').findById(userId);
+  if (!user || !user.isActive) return null;
+  if (user.clinicId) {
+    const clinic = await db.c('clinics').findById(user.clinicId);
+    if (!clinic || !clinic.isActive || new Date(clinic.validityEnd) < now()) return null;
+  }
+  return { sessionId: s._id, user: { id: user._id, _id: user._id, clinic_id: user.clinicId || null, clinicId: user.clinicId || null, role: user.role, email: user.email, is_active: user.isActive, isActive: user.isActive, first_name: user.firstName, last_name: user.lastName, full_name: user.fullName, firstName: user.firstName, lastName: user.lastName, fullName: user.fullName, phone: user.phone, username: user.username } };
 }
 
 // ---- OTP challenges ----
-async function createChallenge(trx, { userId, purpose, codeHash, salt, expiresAt, ip }) {
-  // Only one live challenge per purpose: older ones are consumed.
-  await trx('otp_challenges').where({ user_id: userId, purpose }).whereNull('consumed_at').update({ consumed_at: trx.fn.now() });
-  const [row] = await trx('otp_challenges').insert({ user_id: userId, purpose, code_hash: codeHash, salt, expires_at: expiresAt, ip }).returning('*');
-  return row;
+async function createChallenge(db, { userId, purpose, codeHash, salt, expiresAt, ip }) {
+  await db.c('otp_challenges').updateMany({ userId, purpose, consumedAt: null }, { consumedAt: now() });
+  return db.c('otp_challenges').insertOne({ userId, purpose, codeHash, salt, attempts: 0, expiresAt, verifiedAt: null, consumedAt: null, ip: ip || null });
 }
-async function findLiveChallenge(trx, userId, purpose) {
-  return trx('otp_challenges').where({ user_id: userId, purpose }).whereNull('consumed_at').orderBy('created_at', 'desc').first();
+async function findLiveChallenge(db, userId, purpose) {
+  const rows = await db.c('otp_challenges').find({ userId, purpose, consumedAt: null }, { sort: { createdAt: -1 }, limit: 1 });
+  return rows[0] || null;
 }
-async function bumpChallengeAttempts(trx, id) {
-  const [row] = await trx('otp_challenges').where({ id }).increment('attempts', 1).returning('attempts');
-  return row ? row.attempts : null;
+async function bumpChallengeAttempts(db, id) {
+  const r = await db.c('otp_challenges').updateOne({ _id: id }, {}, { inc: { attempts: 1 } });
+  return r ? r.attempts : null;
 }
-async function markChallengeVerified(trx, id) {
-  await trx('otp_challenges').where({ id }).update({ verified_at: trx.fn.now() });
+async function markChallengeVerified(db, id) {
+  await db.c('otp_challenges').updateOne({ _id: id }, { verifiedAt: now() });
 }
-async function consumeChallenge(trx, id) {
-  await trx('otp_challenges').where({ id }).update({ consumed_at: trx.fn.now() });
+async function consumeChallenge(db, id) {
+  await db.c('otp_challenges').updateOne({ _id: id }, { consumedAt: now() });
 }
 
-module.exports = { findUserByEmail, findUserById, findClinicForUser, updateUser, createSession, findSessionById, findSessionByTokenHash, rotateSession, revokeSession, revokeAllSessions, listSessions, findLiveSessionWithUser, createChallenge, findLiveChallenge, bumpChallengeAttempts, markChallengeVerified, consumeChallenge };
+module.exports = { findUserByEmail, findUserById, findClinicForUser, updateUser, createSession, findSessionByTokenHash, rotateSession, revokeSession, revokeAllSessions, listSessions, findLiveSessionWithUser, createChallenge, findLiveChallenge, bumpChallengeAttempts, markChallengeVerified, consumeChallenge };

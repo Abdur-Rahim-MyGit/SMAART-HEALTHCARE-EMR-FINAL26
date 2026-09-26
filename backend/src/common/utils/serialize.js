@@ -1,11 +1,12 @@
 'use strict';
 /**
- * Row serialisation helpers. PostgreSQL rows are snake_case; the existing UI expects
- * camelCase plus a Mongo style `_id`. Nothing here ever emits secrets.
+ * Document serialisation helpers. Documents are camelCase with a string `_id`; the
+ * existing UI also reads `id`. Legacy snake_case input is normalised. Nothing here ever emits secrets.
  */
-const SECRET_KEYS = new Set(['password_hash', 'passwordHash', 'password', 'adminPassword', 'refresh_token_hash', 'code_hash', 'otp', 'resetOTP', 'secret']);
+const SECRET_KEYS = new Set(['password_hash', 'passwordHash', 'password', 'adminPassword', 'refresh_token_hash', 'refreshTokenHash', 'previousTokenHash', 'code_hash', 'codeHash', 'salt', 'otp', 'resetOTP', 'secret']);
 
 function toCamel(key) {
+  if (key.startsWith('_')) return key; // _id and other leading-underscore keys stay as they are
   return key.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
 
@@ -20,6 +21,7 @@ function serializeRow(row, { idAlias = true } = {}) {
     const ck = toCamel(k);
     out[ck] = v instanceof Date ? v : v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Buffer) ? serializeRow(v, { idAlias: false }) : v;
   }
+  if (idAlias && out._id !== undefined && out.id === undefined) out.id = out._id;
   if (idAlias && out.id !== undefined && out._id === undefined) out._id = out.id;
   return out;
 }
@@ -34,7 +36,7 @@ function toSnake(key) {
   return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 }
 
-/** Picks allowed camelCase keys from input and returns a snake_case object for knex. */
+/** Picks allowed camelCase keys from input and returns a snake_case object (legacy mappers). */
 function pickForDb(input, allowed) {
   const out = {};
   for (const key of allowed) {

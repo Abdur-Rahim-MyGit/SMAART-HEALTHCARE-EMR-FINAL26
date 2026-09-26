@@ -1,7 +1,5 @@
 'use strict';
-const { getKnex } = require('../../infrastructure/postgres/knex');
-const { withSystem } = require('../../infrastructure/postgres/tenant');
-const { isMongoConnected } = require('../../infrastructure/mongodb/connection');
+const { withSystem } = require('../../infrastructure/mongodb/tenant');
 const fhir = require('../../fhir/mappings');
 
 /**
@@ -12,13 +10,12 @@ async function fhirSyncHandler(event) {
   const map = { patient: ['patients', (row) => fhir.patient(row)], encounter: ['encounters', (row) => fhir.encounter(row)], appointment: ['appointments', (row) => fhir.appointment(row)], document: ['documents', (row) => fhir.documentReference(row)] };
   const m = map[event.aggregateType];
   if (!m || !event.aggregateId) return;
-  const row = await withSystem((trx) => trx(m[0]).where({ id: event.aggregateId }).first(), getKnex());
-  if (!row) return;
-  const resource = m[1](row);
-  if (isMongoConnected()) {
-    const { FhirPayloadSnapshot } = require('../../infrastructure/mongodb/models');
-    await FhirPayloadSnapshot.create({ clinicId: event.clinicId, resourceType: resource.resourceType, resourceId: resource.id, direction: 'export', resource, actorId: event.actorId, requestId: event.id });
-  }
-  await withSystem((trx) => trx('fhir_resource_refs').where({ resource_type: resource.resourceType, resource_id: resource.id }).update({ last_synced_at: null }), getKnex());
+  await withSystem(async (db) => {
+    const row = await db.c(m[0]).findById(event.aggregateId, { includeDeleted: true });
+    if (!row) return;
+    const resource = m[1](row);
+    await db.c('fhir_payload_snapshots').insertOne({ clinicId: event.clinicId || row.clinicId || null, resourceType: resource.resourceType, resourceId: resource.id, direction: 'export', resource, actorId: event.actorId || null, requestId: event.id || null });
+    await db.c('fhir_resource_refs').updateMany({ resourceType: resource.resourceType, resourceId: resource.id }, { lastSyncedAt: null });
+  });
 }
 module.exports = { fhirSyncHandler };

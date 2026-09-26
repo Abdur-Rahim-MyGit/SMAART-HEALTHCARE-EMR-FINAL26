@@ -2,8 +2,9 @@
 const request = require('supertest');
 const crypto = require('crypto');
 const { createApp } = require('../../src/app');
-const { getKnex } = require('../../src/infrastructure/postgres/knex');
-const { withSystem } = require('../../src/infrastructure/postgres/tenant');
+const { connectMongo, getDb } = require('../../src/infrastructure/mongodb/connection');
+const { withSystem } = require('../../src/infrastructure/mongodb/tenant');
+const { COLLECTIONS } = require('../../src/infrastructure/mongodb/collections');
 const { hashPassword } = require('../../src/common/security/password');
 const { ROLES } = require('../../src/common/security/rbac');
 
@@ -14,24 +15,16 @@ function getApp() {
 }
 
 const ADMIN = { email: 'sma@test.local', password: 'Admin12345' };
+const KEEP = new Set(['roles', 'permissions', 'role_permissions', 'system_settings', 'schema_migrations']);
 
-let adminKnex;
-/** Test-only privileged connection (schema owner) used to wipe tables; the app role cannot delete audit rows. */
-function getAdminKnex() {
-  if (!adminKnex) adminKnex = require('knex')({ client: 'pg', connection: process.env.MIGRATION_DATABASE_URL, pool: { min: 0, max: 2 } });
-  return adminKnex;
-}
-
+/** Empties every data collection (reference data stays) and recreates the super master admin. */
 async function resetData() {
-  await getAdminKnex().transaction(async (trx) => {
-    await trx.raw("select set_config('app.role', 'system', true)");
-    for (const t of ['audit_logs', 'outbox_events', 'notifications', 'invoices', 'teleconsultations', 'referrals', 'imaging_studies', 'imaging_orders', 'lab_results', 'lab_orders', 'vitals', 'prescription_items', 'prescriptions', 'medications', 'allergies', 'clinical_conditions', 'encounters', 'appointments', 'patient_identifiers', 'documents', 'patients', 'practitioners', 'otp_challenges', 'auth_sessions', 'users', 'clinics', 'legacy_id_map', 'fhir_resource_refs']) {
-      await trx.raw(`DELETE FROM ${t}`);
-    }
+  await connectMongo();
+  const db = getDb();
+  for (const name of Object.keys(COLLECTIONS)) if (!KEEP.has(name)) await db.collection(name).deleteMany({});
+  await withSystem(async (s) => {
+    await s.c('users').insertOne({ clinicId: null, email: ADMIN.email, passwordHash: await hashPassword(ADMIN.password), role: ROLES.SUPER_MASTER_ADMIN, firstName: 'Super', lastName: 'Master', fullName: 'Super Master', phone: null, username: null, isActive: true, isVerified: true, lastLoginAt: null, failedLoginAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
   });
-  await withSystem(async (trx) => {
-    await trx('users').insert({ email: ADMIN.email, password_hash: await hashPassword(ADMIN.password), role: ROLES.SUPER_MASTER_ADMIN, first_name: 'Super', last_name: 'Master', full_name: 'Super Master', is_active: true, is_verified: true });
-  }, getKnex());
   const { getRedis } = require('../../src/infrastructure/redis/client');
   await getRedis().flushall();
 }
@@ -72,6 +65,8 @@ async function twoClinics() {
   return { adminToken: t, a, b, pa, pb };
 }
 
+/** Direct, unscoped read of one document (tests only). */
+const raw = (name) => getDb().collection(name);
+
 const api = () => request(getApp());
-async function closeAdmin() { if (adminKnex) { await adminKnex.destroy(); adminKnex = undefined; } }
-module.exports = { closeAdmin, getApp, api, resetData, login, adminToken, createClinic, createPatient, twoClinics, ADMIN };
+module.exports = { getApp, api, raw, resetData, login, adminToken, createClinic, createPatient, twoClinics, ADMIN };

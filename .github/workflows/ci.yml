@@ -21,23 +21,13 @@ jobs:
     name: Backend lint, unit, integration
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
-        env: { POSTGRES_USER: smaart_migrator, POSTGRES_PASSWORD: smaart_dev, POSTGRES_DB: smaart_emr_test }
-        ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U smaart_migrator" --health-interval 5s --health-retries 10
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]
-      mongodb:
-        image: mongo:7
-        ports: ["27017:27017"]
     env:
       NODE_ENV: test
-      DATABASE_URL: postgres://smaart_app:smaart_dev@localhost:5432/smaart_emr_test
-      MIGRATION_DATABASE_URL: postgres://smaart_migrator:smaart_dev@localhost:5432/smaart_emr_test
       REDIS_URL: redis://localhost:6379
-      MONGODB_URI: mongodb://localhost:27017/smaart_emr_test
+      MONGODB_URI: mongodb://127.0.0.1:27017/smaart_emr_test?directConnection=true
       JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret-1234
       CORS_ORIGINS: http://localhost:3000
       EMAIL_TRANSPORT: none
@@ -49,8 +39,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: backend/package-lock.json }
-      - name: Create least-privilege application role
-        run: PGPASSWORD=smaart_dev psql -h localhost -U smaart_migrator -d smaart_emr_test -c "CREATE ROLE smaart_app LOGIN PASSWORD 'smaart_dev' NOSUPERUSER NOBYPASSRLS;"
+      - name: Start MongoDB as a single-node replica set (transactions)
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8 mongod --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do docker exec mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 })' >/dev/null 2>&1 && break; sleep 2; done
+          docker exec mongo mongosh --quiet --eval "rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: '127.0.0.1:27017' }] })"
+          for i in $(seq 1 30); do docker exec mongo mongosh --quiet --eval 'rs.isMaster().ismaster' | grep -q true && break; sleep 2; done
       - run: npm ci
         working-directory: backend
       - run: npm run lint
@@ -67,19 +61,13 @@ jobs:
     name: Frontend build and end-to-end
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
-        env: { POSTGRES_USER: smaart_migrator, POSTGRES_PASSWORD: smaart_dev, POSTGRES_DB: smaart_emr_test }
-        ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U smaart_migrator" --health-interval 5s --health-retries 10
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]
     env:
       NODE_ENV: test
-      DATABASE_URL: postgres://smaart_app:smaart_dev@localhost:5432/smaart_emr_test
-      MIGRATION_DATABASE_URL: postgres://smaart_migrator:smaart_dev@localhost:5432/smaart_emr_test
       REDIS_URL: redis://localhost:6379
+      MONGODB_URI: mongodb://127.0.0.1:27017/smaart_emr_test?directConnection=true
       JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret-1234
       CORS_ORIGINS: http://localhost:3000
       EMAIL_TRANSPORT: none
@@ -92,10 +80,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: PGPASSWORD=smaart_dev psql -h localhost -U smaart_migrator -d smaart_emr_test -c "CREATE ROLE smaart_app LOGIN PASSWORD 'smaart_dev' NOSUPERUSER NOBYPASSRLS;"
+      - name: Start MongoDB as a single-node replica set (transactions)
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8 mongod --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do docker exec mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 })' >/dev/null 2>&1 && break; sleep 2; done
+          docker exec mongo mongosh --quiet --eval "rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: '127.0.0.1:27017' }] })"
+          for i in $(seq 1 30); do docker exec mongo mongosh --quiet --eval 'rs.isMaster().ismaster' | grep -q true && break; sleep 2; done
       - run: npm ci
         working-directory: backend
-      - run: npm run migrate && npm run seed
+      - run: npm run migrate
         working-directory: backend
       - run: BOOTSTRAP_ADMIN_EMAIL=$E2E_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD=$E2E_ADMIN_PASSWORD npm run bootstrap:admin
         working-directory: backend
@@ -161,7 +154,7 @@ jobs:
         id: task
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with: { task-definition: deploy/aws/task-definition.api.json, container-name: api, image: "${{ env.IMAGE_API }}:${{ github.sha }}" }
-      - name: Run database migrations (one-off task)
+      - name: Ensure database schema and indexes (one-off task)
         run: |
           aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" --launch-type FARGATE --task-definition "${{ vars.ECS_TASK_MIGRATE }}" \
             --network-configuration "${{ vars.ECS_NETWORK_CONFIG }}" --overrides '{"containerOverrides":[{"name":"api","command":["npm","run","migrate"]}]}'
@@ -187,7 +180,7 @@ jobs:
       - id: task
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with: { task-definition: deploy/aws/task-definition.api.json, container-name: api, image: "${{ env.IMAGE_API }}:${{ github.sha }}" }
-      - name: Run database migrations (one-off task)
+      - name: Ensure database schema and indexes (one-off task)
         run: |
           aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" --launch-type FARGATE --task-definition "${{ vars.ECS_TASK_MIGRATE }}" \
             --network-configuration "${{ vars.ECS_NETWORK_CONFIG }}" --overrides '{"containerOverrides":[{"name":"api","command":["npm","run","migrate"]}]}'

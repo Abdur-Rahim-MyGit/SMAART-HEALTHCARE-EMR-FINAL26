@@ -10,7 +10,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 RUN addgroup -S smaart && adduser -S smaart -G smaart
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json knexfile.js ./
+COPY package.json ./
 COPY src ./src
 USER smaart
 EXPOSE 5001

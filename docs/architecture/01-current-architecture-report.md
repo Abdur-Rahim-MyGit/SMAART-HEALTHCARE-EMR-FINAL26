@@ -94,6 +94,6 @@ Duplicate sources of truth: allergies/conditions/medications live in `Patient.me
 1. Rotate every credential in the committed `.env`, `.env.example` and sample scripts; purge them from the repo.
 2. Remove public registration/bootstrap/test endpoints; fix password reset to verify the OTP; hash all passwords (Argon2id), never log or return secrets/OTPs.
 3. Single identity store with two roles; short-lived access tokens with refresh rotation and revocation.
-4. Centralised RBAC + tenant scope derived from the token; every repository query clinic-scoped; PostgreSQL RLS as a second layer.
+4. Centralised RBAC + tenant scope derived from the token; every repository query clinic-scoped by a tenant-enforcing data-access layer (the only path to the database) as a second line of defence.
 5. Helmet, CORS allow-list, rate limiting, Zod validation, safe error responses, structured logs with redaction, audit logging.
 6. Authenticate `/invoices`; remove `/users/test-doctors`, `/clinics/:id/debug`; stop returning `adminPassword`, `passwordHash`, `otp`, `resetOTP`.

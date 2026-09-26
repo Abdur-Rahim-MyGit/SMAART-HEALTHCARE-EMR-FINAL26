@@ -1,8 +1,7 @@
 'use strict';
 const jwt = require('jsonwebtoken');
 const { api, resetData, login, adminToken, createClinic, ADMIN } = require('../helpers/api');
-const { getKnex } = require('../../src/infrastructure/postgres/knex');
-const { withSystem } = require('../../src/infrastructure/postgres/tenant');
+const { withSystem } = require('../../src/infrastructure/mongodb/tenant');
 const { config } = require('../../src/config');
 
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
@@ -10,11 +9,14 @@ const auth = (t) => ({ Authorization: `Bearer ${t}` });
 async function latestOtp(email, purpose) {
   // Tests read the hashed challenge and brute-force the 4/6 digit space offline (the API never exposes codes).
   const { hashOtp } = require('../../src/common/security/otp');
-  const ch = await withSystem((trx) => trx('otp_challenges as c').join('users as u', 'u.id', 'c.user_id').whereRaw('lower(u.email::text)=?', [email]).andWhere('c.purpose', purpose).whereNull('c.consumed_at').orderBy('c.created_at', 'desc').first('c.*'), getKnex());
+  const ch = await withSystem(async (db) => {
+    const user = await db.c('users').findOne({ email: email.toLowerCase() });
+    return (await db.c('otp_challenges').find({ userId: user._id, purpose, consumedAt: null }, { sort: { createdAt: -1 }, limit: 1 }))[0];
+  });
   const len = purpose === 'login' ? 4 : 6;
   for (let i = 0; i < 10 ** len; i++) {
     const code = String(i).padStart(len, '0');
-    if (hashOtp(code, ch.salt) === ch.code_hash) return code;
+    if (hashOtp(code, ch.salt) === ch.codeHash) return code;
   }
   throw new Error('otp not found');
 }

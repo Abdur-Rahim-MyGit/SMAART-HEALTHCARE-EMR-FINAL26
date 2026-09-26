@@ -1,5 +1,5 @@
 // End-to-end tests of the existing UI against the real API (test database).
-// Requires: PostgreSQL + Redis reachable per backend/.env.test, migrations applied,
+// Requires: MongoDB (replica set) + Redis reachable per backend/.env.test, schema applied (npm run migrate),
 // and a bootstrapped admin (E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD).
 import { defineConfig, devices } from '@playwright/test';
 

@@ -1,19 +1,20 @@
 'use strict';
 /**
- * Legacy MongoDB → PostgreSQL data migration (CLI).
+ * Legacy MongoDB (mongoose models, ObjectIds, mixed roles) → new MongoDB model (CLI).
  *
- *   npm run migrate:data -- --mongo mongodb://... --dry-run      # analyse, write report
- *   npm run migrate:data -- --mongo mongodb://... --apply        # migrate (idempotent) + validate
- *   npm run migrate:data -- --mongo mongodb://... --report out.json
+ *   npm run migrate:data -- --mongo mongodb://legacy... --dry-run      # analyse, write report
+ *   npm run migrate:data -- --mongo mongodb://legacy... --apply        # migrate (idempotent) + validate
+ *   npm run migrate:data -- --mongo mongodb://legacy... --report out.json
  *
- * Read-only on the legacy database. Every ObjectId maps to a deterministic UUID v5 stored
- * in legacy_id_map so re-runs update instead of duplicate. Legacy data is never deleted.
+ * Read-only on the legacy database (which may be another database on the same
+ * server). Every ObjectId maps to a deterministic UUID v5 stored in legacy_id_map so
+ * re-runs update instead of duplicate. Legacy data is never deleted by this tool.
  */
 const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const { config } = require('../../config');
-const { closeKnex } = require('../../infrastructure/postgres/knex');
-const { connectMongo, closeMongo } = require('../../infrastructure/mongodb/connection');
+const { connectMongo, closeMongo, getDb } = require('../../infrastructure/mongodb/connection');
+const { ensureSchema } = require('../../infrastructure/mongodb/schema');
 const { runMigration, COLLECTIONS } = require('./run');
 
 const args = process.argv.slice(2);
@@ -27,19 +28,23 @@ async function main() {
   if (!MONGO) throw new Error('--mongo <uri> (or LEGACY_MONGODB_URI) is required');
   const client = new MongoClient(MONGO, { readPreference: 'secondaryPreferred' });
   await client.connect();
-  const db = client.db();
+  const legacy = client.db();
+  if (APPLY) {
+    await connectMongo();
+    if (getDb().databaseName === legacy.databaseName && new MongoClient(env.MONGODB_URI).options.hosts.join() === client.options.hosts.join()) throw new Error('target database must differ from the legacy database');
+    await ensureSchema();
+  }
   const src = {};
-  for (const c of COLLECTIONS) src[c] = await db.collection(c).find({}).toArray();
+  for (const c of COLLECTIONS) src[c] = await legacy.collection(c).find({}).toArray();
   await client.close();
-  if (APPLY && env.MONGODB_URI) await connectMongo();
   const { report } = await runMigration(src, { apply: APPLY });
   fs.writeFileSync(REPORT, JSON.stringify(report, null, 2));
   process.stdout.write(`${APPLY ? 'Migration' : 'Dry run'} ${report.ok ? 'OK' : 'completed with problems'}. Report: ${REPORT}\n`);
   for (const f of report.validation.failures) process.stdout.write(`  FAIL ${f}\n`);
+  for (const e of report.errors) process.stdout.write(`  ERROR ${e}\n`);
   for (const w of report.warnings) process.stdout.write(`  WARN ${w}\n`);
   await closeMongo();
-  await closeKnex();
   if (!report.ok) process.exit(2);
 }
 
-main().catch(async (err) => { process.stderr.write(`${err.stack || err.message}\n`); await closeKnex(); process.exit(1); });
+main().catch(async (err) => { process.stderr.write(`${err.stack || err.message}\n`); await closeMongo().catch(() => {}); process.exit(1); });

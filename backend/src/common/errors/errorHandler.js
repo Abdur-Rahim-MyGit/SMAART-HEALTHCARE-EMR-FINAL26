@@ -15,17 +15,12 @@ function mapKnownError(err) {
     if (err.code === 'LIMIT_FILE_SIZE') return new AppError('FILE_TOO_LARGE', 'Uploaded file exceeds the size limit', 413);
     return new AppError('UPLOAD_ERROR', 'Invalid upload', 400);
   }
-  // PostgreSQL error codes we can safely translate.
-  if (err && typeof err.code === 'string') {
-    if (err.code === '23505') return new AppError('DUPLICATE', 'A record with the same unique value already exists', 409);
-    if (err.code === '23503') return new AppError('INVALID_REFERENCE', 'Referenced record does not exist', 400);
-    if (err.code === '23514') return new AppError('CONSTRAINT_VIOLATION', 'Record violates a data constraint', 400);
-    if (err.code === '22P02') return new AppError('INVALID_IDENTIFIER', 'Invalid identifier format', 400);
-    if (err.code === '42501') return new AppError('FORBIDDEN', 'Access denied', 403);
-  }
-  if (err && err.name === 'CastError') return new AppError('INVALID_IDENTIFIER', 'Invalid identifier format', 400);
-  if (err && err.name === 'ValidationError' && err.errors) {
-    return new AppError('VALIDATION_ERROR', 'Validation failed', 422, Object.keys(err.errors).map((k) => ({ path: k, message: err.errors[k].message })));
+  // MongoDB driver errors we can safely translate (never echo the raw message).
+  if (err && (err.name === 'MongoServerError' || err.name === 'MongoBulkWriteError' || typeof err.code === 'number')) {
+    if (err.code === 11000) return new AppError('DUPLICATE', 'A record with the same unique value already exists', 409);
+    if (err.code === 121) return new AppError('CONSTRAINT_VIOLATION', 'Record violates a data constraint', 422);
+    if (err.code === 112 || err.code === 251) return new AppError('CONCURRENT_MODIFICATION', 'The record was modified concurrently, please retry', 409);
+    if (err.code === 13 || err.code === 8000) return new AppError('FORBIDDEN', 'Access denied', 403);
   }
   return null;
 }

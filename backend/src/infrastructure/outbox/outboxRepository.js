@@ -1,35 +1,38 @@
 'use strict';
 const crypto = require('crypto');
+const { getDb } = require('../mongodb/connection');
 
 /**
  * Transactional outbox: services append events inside the same transaction as
  * their data change; the publisher worker delivers them to RabbitMQ.
  */
-async function enqueueEvent(trx, { type, aggregateType, aggregateId, clinicId, payload = {}, actorId }) {
+async function enqueueEvent(db, { type, aggregateType, aggregateId, clinicId, payload = {}, actorId }) {
   const id = crypto.randomUUID();
-  await trx('outbox_events').insert({ id, event_type: type, aggregate_type: aggregateType, aggregate_id: aggregateId ? String(aggregateId) : null, clinic_id: clinicId || null, actor_id: actorId || null, payload: JSON.stringify(payload) });
+  await getDb().collection('outbox_events').insertOne({ _id: id, eventType: type, aggregateType, aggregateId: aggregateId ? String(aggregateId) : null, clinicId: clinicId || null, actorId: actorId || null, payload, createdAt: new Date(), publishedAt: null, attempts: 0, lastError: null, nextAttemptAt: new Date(), claimedUntil: null }, { session: db.session });
   return id;
 }
 
-async function claimPending(knex, limit = 50) {
-  return knex.transaction(async (trx) => {
-    const rows = await trx('outbox_events')
-      .whereNull('published_at')
-      .andWhere('next_attempt_at', '<=', trx.fn.now())
-      .orderBy('created_at', 'asc')
-      .limit(limit)
-      .forUpdate()
-      .skipLocked();
-    return rows;
-  });
+/** Claims a batch with a short lease so several publishers never double-deliver. */
+async function claimPending(limit = 50, leaseMs = 30000) {
+  const col = getDb().collection('outbox_events');
+  const now = new Date();
+  const claimed = [];
+  for (let i = 0; i < limit; i++) {
+    const row = await col.findOneAndUpdate({ publishedAt: null, nextAttemptAt: { $lte: now }, $or: [{ claimedUntil: null }, { claimedUntil: { $lt: now } }] }, { $set: { claimedUntil: new Date(Date.now() + leaseMs) } }, { sort: { createdAt: 1 }, returnDocument: 'after' });
+    if (!row) break;
+    claimed.push(row);
+  }
+  return claimed;
 }
-
-async function markPublished(knex, id) {
-  await knex('outbox_events').where({ id }).update({ published_at: knex.fn.now() });
+async function markPublished(id) {
+  await getDb().collection('outbox_events').updateOne({ _id: id }, { $set: { publishedAt: new Date(), claimedUntil: null } });
 }
-async function markFailed(knex, id, error, attempts) {
+async function markFailed(id, error, attempts) {
   const backoffSeconds = Math.min(3600, 10 * 2 ** attempts);
-  await knex('outbox_events').where({ id }).update({ attempts: attempts + 1, last_error: String(error && error.message).slice(0, 500), next_attempt_at: knex.raw(`now() + (? * interval '1 second')`, [backoffSeconds]) });
+  await getDb().collection('outbox_events').updateOne({ _id: id }, { $set: { attempts: attempts + 1, lastError: String(error && error.message).slice(0, 500), nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000), claimedUntil: null } });
+}
+async function pendingCount() {
+  return getDb().collection('outbox_events').countDocuments({ publishedAt: null });
 }
 
-module.exports = { enqueueEvent, claimPending, markPublished, markFailed };
+module.exports = { enqueueEvent, claimPending, markPublished, markFailed, pendingCount };

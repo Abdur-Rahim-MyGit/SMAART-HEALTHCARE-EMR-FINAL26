@@ -1,12 +1,15 @@
 'use strict';
-const { execSync } = require('child_process');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env.test') });
 
+/** Creates the test database schema once per run (collections, validators, indexes, reference data). */
 module.exports = async function globalSetup() {
   process.env.NODE_ENV = 'test';
-  const cwd = path.resolve(__dirname, '../..');
-  const opts = { cwd, stdio: 'inherit', env: { ...process.env, NODE_ENV: 'test' } };
-  execSync('npx knex --knexfile knexfile.js migrate:rollback --all', opts);
-  execSync('npx knex --knexfile knexfile.js migrate:latest', opts);
-  execSync('npx knex --knexfile knexfile.js seed:run', opts);
+  const { connectMongo, closeMongo } = require('../../src/infrastructure/mongodb/connection');
+  const { ensureSchema, seedReferenceData, dropAll } = require('../../src/infrastructure/mongodb/schema');
+  await connectMongo();
+  await dropAll();
+  await ensureSchema({ log: { info() {} } });
+  await seedReferenceData();
+  await closeMongo();
 };

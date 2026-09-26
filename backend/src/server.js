@@ -2,8 +2,8 @@
 const http = require('http');
 const { config } = require('./config');
 const { getLogger } = require('./common/logging/logger');
-const { getKnex, closeKnex, pingPostgres } = require('./infrastructure/postgres/knex');
 const { connectMongo, closeMongo } = require('./infrastructure/mongodb/connection');
+const { ensureSchema, seedReferenceData } = require('./infrastructure/mongodb/schema');
 const { getRedis, closeRedis } = require('./infrastructure/redis/client');
 const { connectRabbit, closeRabbit } = require('./infrastructure/rabbitmq/connection');
 const { createApp } = require('./app');
@@ -11,15 +11,10 @@ const { createApp } = require('./app');
 async function start() {
   const env = config();
   const log = getLogger();
-  await pingPostgres();
-  log.info('postgres connected');
+  await connectMongo();
+  await ensureSchema({ log });
+  await seedReferenceData();
   getRedis();
-  try {
-    await connectMongo();
-  } catch (err) {
-    if (env.MONGODB_REQUIRED || env.isProduction) throw err;
-    log.warn({ err }, 'mongodb unavailable, continuing without it');
-  }
   try {
     await connectRabbit();
   } catch (err) {
@@ -41,7 +36,7 @@ async function start() {
     log.info({ signal }, 'shutting down');
     server.close(async () => {
       try {
-        await Promise.allSettled([closeRabbit(), closeMongo(), closeRedis(), closeKnex()]);
+        await Promise.allSettled([closeRabbit(), closeRedis(), closeMongo()]);
       } finally {
         process.exit(0);
       }
@@ -61,4 +56,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { start, getKnex };
+module.exports = { start };
