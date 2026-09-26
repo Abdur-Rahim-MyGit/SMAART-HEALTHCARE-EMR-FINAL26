@@ -4,7 +4,8 @@ node_modules/
 !.env.example
 dist/
 coverage/
-storage/
+/storage/
+/backend/storage/
 .test-storage/
 *.log
 .DS_Store

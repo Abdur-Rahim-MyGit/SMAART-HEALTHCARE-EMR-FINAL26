@@ -16,6 +16,7 @@
     "migrate:make": "knex --knexfile knexfile.js migrate:make",
     "seed": "knex --knexfile knexfile.js seed:run",
     "bootstrap:admin": "node src/tools/bootstrapAdmin.js",
+    "sync:admins": "node src/tools/syncSuperAdmins.js",
     "migrate:data": "node src/tools/migrate-legacy-data/index.js",
     "lint": "eslint src tests",
     "test": "vitest run",

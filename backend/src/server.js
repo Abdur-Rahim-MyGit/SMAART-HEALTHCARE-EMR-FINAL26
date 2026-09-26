@@ -34,6 +34,19 @@ async function start() {
   await new Promise((resolve) => server.listen(env.PORT, resolve));
   log.info({ port: env.PORT, env: env.NODE_ENV }, 'SMAART EMR API listening');
 
+  if (!env.isProduction) {
+    const divider = '='.repeat(54);
+    console.log(`\n\x1b[32m${divider}\x1b[0m`);
+    console.log(`\x1b[1m\x1b[32m  🚀 SMAART HEALTHCARE EMR BACKEND IS RUNNING!\x1b[0m`);
+    console.log(`\x1b[32m${divider}\x1b[0m`);
+    console.log(`  📡 \x1b[1mAPI URL:\x1b[0m       http://localhost:${env.PORT}`);
+    console.log(`  🏥 \x1b[1mEnvironment:\x1b[0m   ${env.NODE_ENV}`);
+    console.log(`  🐘 \x1b[1mPostgreSQL:\x1b[0m    \x1b[32mConnected\x1b[0m`);
+    console.log(`  🍃 \x1b[1mMongoDB:\x1b[0m       \x1b[32mConnected\x1b[0m`);
+    console.log(`  🔍 \x1b[1mHealth Check:\x1b[0m  http://localhost:${env.PORT}/health/live`);
+    console.log(`\x1b[32m${divider}\x1b[0m\n`);
+  }
+
   let shuttingDown = false;
   const shutdown = async (signal) => {
     if (shuttingDown) return;
