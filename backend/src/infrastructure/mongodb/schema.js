@@ -7,21 +7,21 @@ const { getDb } = require('./connection');
 const { COLLECTIONS } = require('./collections');
 const { getLogger } = require('../../common/logging/logger');
 
-const uuid = { bsonType: 'string', pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' };
-const nullableUuid = { oneOf: [uuid, { bsonType: 'null' }] };
+const uuid = { bsonType: ['string', 'objectId'] };
+const nullableUuid = { bsonType: ['string', 'objectId', 'null'] };
 const str = { bsonType: 'string' };
-const date = { bsonType: 'date' };
-const ndate = { bsonType: ['date', 'null'] };
+const date = { bsonType: ['date', 'string'] };
+const ndate = { bsonType: ['date', 'string', 'null'] };
 const num = { bsonType: ['int', 'long', 'double', 'decimal'] };
 const nnum = { bsonType: ['int', 'long', 'double', 'decimal', 'null'] };
 const bool = { bsonType: 'bool' };
 const enumOf = (values) => ({ enum: values });
-const base = (props, required = []) => ({ $jsonSchema: { bsonType: 'object', required: ['_id', 'createdAt', ...required], properties: { _id: uuid, createdAt: date, updatedAt: ndate, createdBy: nullableUuid, updatedBy: nullableUuid, deletedAt: ndate, version: nnum, ...props } } });
+const base = (props, required = []) => ({ $jsonSchema: { bsonType: 'object', required: ['_id', ...required], properties: { _id: uuid, createdAt: date, updatedAt: ndate, createdBy: nullableUuid, updatedBy: nullableUuid, deletedAt: ndate, version: nnum, ...props } } });
 const tenant = (props, required = []) => base({ clinicId: uuid, ...props }, ['clinicId', ...required]);
 
 const VALIDATORS = {
-  clinics: base({ name: str, adminEmail: str, isActive: bool, validityStart: date, validityEnd: date }, ['name', 'adminEmail', 'validityEnd']),
-  users: base({ clinicId: nullableUuid, role: enumOf(['super_master_admin', 'clinic_admin']), email: str, passwordHash: str, isActive: bool }, ['role', 'email', 'passwordHash']),
+  clinics: base({ name: str, adminEmail: { bsonType: ['string', 'null'] }, isActive: bool, validityStart: ndate, validityEnd: ndate, specialties: { bsonType: 'array', items: str }, services: { bsonType: 'array', items: str } }, ['name']),
+  users: base({ clinicId: nullableUuid, role: str, email: str, passwordHash: { bsonType: ['string', 'null'] }, password: { bsonType: ['string', 'null'] }, isActive: bool }, ['role', 'email']),
   auth_sessions: base({ userId: uuid, refreshTokenHash: str, expiresAt: date }, ['userId', 'refreshTokenHash', 'expiresAt']),
   otp_challenges: base({ userId: uuid, purpose: enumOf(['login', 'password_reset', 'verify_email']), codeHash: str, salt: str, expiresAt: date, attempts: num }, ['userId', 'purpose', 'codeHash', 'expiresAt']),
   practitioners: tenant({ kind: enumOf(['doctor', 'nurse', 'lab_technician']), fullName: str, isActive: bool }, ['kind', 'fullName']),
@@ -52,14 +52,14 @@ const VALIDATORS = {
 };
 
 const INDEXES = {
-  clinics: [[{ adminEmail: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } }], [{ validityEnd: 1 }], [{ name: 'text', city: 'text', type: 'text' }]],
-  users: [[{ email: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } }], [{ clinicId: 1 }]],
+  clinics: [[{ adminEmail: 1 }, { unique: true, partialFilterExpression: { adminEmail: { $type: 'string' }, deletedAt: null } }], [{ validityEnd: 1 }], [{ name: 'text', city: 'text', type: 'text' }]],
+  users: [[{ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' }, deletedAt: null } }], [{ clinicId: 1 }]],
   roles: [], permissions: [], role_permissions: [[{ roleCode: 1, permissionCode: 1 }, { unique: true }]],
   auth_sessions: [[{ userId: 1 }], [{ refreshTokenHash: 1 }, { unique: true }], [{ previousTokenHash: 1 }], [{ expiresAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 }]],
   otp_challenges: [[{ userId: 1, purpose: 1, createdAt: -1 }], [{ expiresAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 }]],
   practitioners: [[{ clinicId: 1, kind: 1 }], [{ clinicId: 1, email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' }, deletedAt: null } }], [{ fullName: 'text', specialty: 'text', email: 'text' }]],
   patients: [[{ clinicId: 1, createdAt: -1 }], [{ clinicId: 1, fullName: 1 }], [{ clinicId: 1, phone: 1 }], [{ clinicId: 1, email: 1 }]],
-  patient_identifiers: [[{ clinicId: 1, system: 1, value: 1 }, { unique: true }], [{ patientId: 1 }]],
+  patient_identifiers: [[{ clinicId: 1, system: 1, value: 1 }, { unique: true, partialFilterExpression: { value: { $type: 'string' } } }], [{ patientId: 1 }]],
   appointments: [[{ clinicId: 1, scheduledAt: -1 }], [{ patientId: 1, scheduledAt: -1 }], [{ practitionerId: 1, scheduledAt: 1 }, { unique: true, partialFilterExpression: { practitionerId: { $type: 'string' }, status: { $in: ['Scheduled', 'Confirmed', 'Completed'] }, deletedAt: null } }]],
   encounters: [[{ patientId: 1, startedAt: -1 }], [{ clinicId: 1, startedAt: -1 }]],
   teleconsultations: [[{ clinicId: 1, scheduledAt: -1 }], [{ patientId: 1 }]],
@@ -67,7 +67,7 @@ const INDEXES = {
   clinical_conditions: [[{ patientId: 1 }], [{ clinicId: 1 }]],
   allergies: [[{ patientId: 1 }], [{ clinicId: 1 }]],
   medications: [[{ patientId: 1 }], [{ clinicId: 1 }]],
-  prescriptions: [[{ clinicId: 1, prescriptionNumber: 1 }, { unique: true }], [{ patientId: 1, prescribedAt: -1 }]],
+  prescriptions: [[{ clinicId: 1, prescriptionNumber: 1 }, { unique: true, partialFilterExpression: { prescriptionNumber: { $type: 'string' }, deletedAt: null } }], [{ patientId: 1, prescribedAt: -1 }]],
   lab_orders: [[{ patientId: 1, orderedAt: -1 }], [{ clinicId: 1 }]],
   lab_results: [[{ patientId: 1, resultDate: -1 }], [{ labOrderId: 1 }], [{ clinicId: 1 }]],
   imaging_orders: [[{ patientId: 1 }], [{ clinicId: 1 }]],
@@ -80,12 +80,12 @@ const INDEXES = {
   dynamic_form_submissions: [[{ clinicId: 1, patientId: 1 }], [{ formId: 1 }]],
   patient_activity_logs: [[{ clinicId: 1, patientId: 1, occurredAt: -1 }]],
   community_posts: [[{ clinicId: 1, status: 1, createdAt: -1 }], [{ title: 'text', content: 'text' }], [{ legacyId: 1 }, { sparse: true }]],
-  invoices: [[{ clinicId: 1, invoiceNumber: 1 }, { unique: true }], [{ clinicId: 1, invoiceDate: -1 }], [{ patientId: 1 }]],
+  invoices: [[{ clinicId: 1, invoiceNumber: 1 }, { unique: true, partialFilterExpression: { invoiceNumber: { $type: 'string' }, deletedAt: null } }], [{ clinicId: 1, invoiceDate: -1 }], [{ patientId: 1 }]],
   inventory_items: [[{ clinicId: 1, name: 1 }], [{ clinicId: 1, expiryDate: 1 }]],
   notifications: [[{ userId: 1, createdAt: -1 }], [{ clinicId: 1, createdAt: -1 }]],
   audit_logs: [[{ clinicId: 1, occurredAt: -1 }], [{ userId: 1, occurredAt: -1 }], [{ resourceType: 1, resourceId: 1 }], [{ action: 1, occurredAt: -1 }]],
   system_settings: [],
-  integration_configs: [[{ clinicId: 1, name: 1 }, { unique: true }]],
+  integration_configs: [[{ clinicId: 1, name: 1 }, { unique: true, partialFilterExpression: { name: { $type: 'string' } } }]],
   integration_payloads: [[{ system: 1, createdAt: -1 }], [{ clinicId: 1 }]],
   fhir_payload_snapshots: [[{ resourceType: 1, resourceId: 1, createdAt: -1 }], [{ clinicId: 1 }]],
   fhir_resource_refs: [[{ externalSystem: 1, resourceType: 1, resourceId: 1 }, { unique: true }]],
@@ -135,6 +135,82 @@ async function seedReferenceData() {
   for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) for (const p of perms) await db.collection('role_permissions').updateOne({ roleCode: role, permissionCode: p }, { $setOnInsert: { roleCode: role, permissionCode: p } }, { upsert: true });
   for (const [key, value, description] of [['security.session.access_ttl', '15m', 'Access token lifetime'], ['security.password.min_length', 8, 'Minimum password length'], ['fhir.enabled', true, 'Expose the FHIR R4 API']]) {
     await db.collection('system_settings').updateOne({ _id: key }, { $setOnInsert: { value, description, updatedAt: now } }, { upsert: true });
+  }
+  await syncLegacyPractitioners();
+}
+
+/** Syncs legacy doctors and nurses collections into practitioners if missing. */
+async function syncLegacyPractitioners() {
+  const db = getDb();
+  const { ObjectId } = require('mongodb');
+  const practitioners = db.collection('practitioners');
+
+  try {
+    const existingCollections = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
+    if (existingCollections.has('doctors')) {
+      const doctors = await db.collection('doctors').find().toArray();
+      for (const d of doctors) {
+        const id = d._id;
+        const exists = await practitioners.findOne({ _id: { $in: [id, String(id), (typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id) ? new ObjectId(id) : id)] } });
+        if (!exists) {
+          await practitioners.insertOne({
+            _id: String(id),
+            kind: 'doctor',
+            fullName: d.fullName || 'Unknown Doctor',
+            email: d.email ? String(d.email).toLowerCase().trim() : null,
+            phone: d.phone ? String(d.phone).trim() : null,
+            specialty: d.specialty || d.specialization || 'General Medicine',
+            qualification: d.qualification || null,
+            licenseNumber: d.licenseNumber || null,
+            about: d.about || null,
+            languages: Array.isArray(d.languages) ? d.languages : [],
+            uhid: d.uhid || null,
+            profileImageUrl: d.profileImage || null,
+            profileImage: d.profileImage || null,
+            currentAddress: d.currentAddress || null,
+            permanentAddress: d.permanentAddress || null,
+            clinicId: d.clinicId ? String(d.clinicId?._id || d.clinicId) : null,
+            isActive: d.isActive !== false,
+            deletedAt: null,
+            createdAt: d.createdAt ? new Date(d.createdAt) : new Date(),
+            updatedAt: d.updatedAt ? new Date(d.updatedAt) : new Date(),
+            version: 1,
+          });
+        }
+      }
+    }
+
+    if (existingCollections.has('nurses')) {
+      const nurses = await db.collection('nurses').find().toArray();
+      for (const n of nurses) {
+        const id = n._id;
+        const exists = await practitioners.findOne({ _id: { $in: [id, String(id), (typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id) ? new ObjectId(id) : id)] } });
+        if (!exists) {
+          await practitioners.insertOne({
+            _id: String(id),
+            kind: 'nurse',
+            fullName: n.fullName || 'Unknown Nurse',
+            email: n.email ? String(n.email).toLowerCase().trim() : null,
+            phone: n.phone ? String(n.phone).trim() : null,
+            department: n.department || null,
+            shift: n.shift || null,
+            licenseNumber: n.licenseNumber || null,
+            experienceYears: Number(n.experience) || Number(n.experienceYears) || null,
+            uhid: n.uhid || null,
+            profileImageUrl: n.profileImage || null,
+            profileImage: n.profileImage || null,
+            clinicId: n.clinicId ? String(n.clinicId?._id || n.clinicId) : null,
+            isActive: n.isActive !== false,
+            deletedAt: null,
+            createdAt: n.createdAt ? new Date(n.createdAt) : new Date(),
+            updatedAt: n.updatedAt ? new Date(n.updatedAt) : new Date(),
+            version: 1,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    getLogger().warn({ err }, 'failed to sync legacy practitioners');
   }
 }
 

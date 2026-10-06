@@ -14,22 +14,30 @@ function serializeRow(row, { idAlias = true } = {}) {
   if (row === null || row === undefined) return row;
   if (Array.isArray(row)) return row.map((r) => serializeRow(r, { idAlias }));
   if (row instanceof Date) return row;
+  if (row && (row._bsontype === 'ObjectID' || row.constructor?.name === 'ObjectId')) return String(row);
   if (typeof row !== 'object') return row;
   const out = {};
   for (const [k, v] of Object.entries(row)) {
     if (SECRET_KEYS.has(k)) continue;
     const ck = toCamel(k);
-    out[ck] = v instanceof Date ? v : v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Buffer) ? serializeRow(v, { idAlias: false }) : v;
+    if (v && (v._bsontype === 'ObjectID' || v.constructor?.name === 'ObjectId')) {
+      out[ck] = String(v);
+    } else {
+      out[ck] = v instanceof Date ? v : v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Buffer) ? serializeRow(v, { idAlias: false }) : v;
+    }
   }
-  if (idAlias && out._id !== undefined && out.id === undefined) out.id = out._id;
-  if (idAlias && out.id !== undefined && out._id === undefined) out._id = out.id;
+  if (idAlias && out._id !== undefined && out.id === undefined) out.id = typeof out._id === 'object' ? String(out._id) : out._id;
+  if (idAlias && out.id !== undefined && out._id === undefined) out._id = typeof out.id === 'object' ? String(out.id) : out.id;
+  if (out._id && typeof out._id === 'object' && (out._id._bsontype === 'ObjectID' || out._id.constructor?.name === 'ObjectId')) out._id = String(out._id);
+  if (out.id && typeof out.id === 'object' && (out.id._bsontype === 'ObjectID' || out.id.constructor?.name === 'ObjectId')) out.id = String(out.id);
   return out;
 }
 
 /** Minimal reference object used where the legacy API "populated" a relation. */
 function ref(id, fields = {}) {
   if (!id) return null;
-  return { _id: id, id, ...fields };
+  const sid = (id && typeof id === 'object' && (id._bsontype === 'ObjectID' || id.constructor?.name === 'ObjectId')) ? String(id) : id;
+  return { _id: sid, id: sid, ...fields };
 }
 
 function toSnake(key) {

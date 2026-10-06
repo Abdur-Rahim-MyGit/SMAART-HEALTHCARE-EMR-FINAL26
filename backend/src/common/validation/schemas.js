@@ -1,7 +1,7 @@
 'use strict';
 const { z } = require('zod');
 
-const uuid = z.string().uuid({ message: 'Invalid identifier format' });
+const uuid = z.string().trim().min(1).max(64);
 const idParam = z.object({ id: uuid });
 const email = z.string().trim().toLowerCase().email().max(254);
 const phone = z.string().trim().min(6).max(20);

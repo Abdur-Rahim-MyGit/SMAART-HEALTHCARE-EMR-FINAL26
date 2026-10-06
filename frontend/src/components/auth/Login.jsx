@@ -31,6 +31,7 @@ const Login = () => {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm();
 
@@ -84,9 +85,10 @@ const Login = () => {
 
   // Developer login bypass (for development only)
   const handleDeveloperLogin = async () => {
-    // Get form values
-    const emailInput = document.querySelector('input[type="email"]')?.value;
-    const passwordInput = document.querySelector('input[type="password"]')?.value;
+    // Get form values from react-hook-form or fallback to DOM
+    const values = getValues ? getValues() : {};
+    const emailInput = values.email || document.querySelector('input[type="email"]')?.value;
+    const passwordInput = values.password || document.querySelector('input[type="password"]')?.value;
     
     if (!emailInput || !passwordInput) {
       toast.error("Please enter email and password first");

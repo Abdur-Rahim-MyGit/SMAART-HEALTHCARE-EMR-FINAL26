@@ -50,7 +50,9 @@ async function findLiveSessionWithUser(db, sessionId, userId) {
     const clinic = await db.c('clinics').findById(user.clinicId);
     if (!clinic || !clinic.isActive || new Date(clinic.validityEnd) < now()) return null;
   }
-  return { sessionId: s._id, user: { id: user._id, _id: user._id, clinic_id: user.clinicId || null, clinicId: user.clinicId || null, role: user.role, email: user.email, is_active: user.isActive, isActive: user.isActive, first_name: user.firstName, last_name: user.lastName, full_name: user.fullName, firstName: user.firstName, lastName: user.lastName, fullName: user.fullName, phone: user.phone, username: user.username } };
+  const id = String(user._id);
+  const fullName = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+  return { sessionId: s._id, user: { id, _id: id, clinic_id: user.clinicId ? String(user.clinicId) : null, clinicId: user.clinicId ? String(user.clinicId) : null, role: user.role, email: user.email, is_active: user.isActive, isActive: user.isActive, first_name: user.firstName, last_name: user.lastName, full_name: fullName, firstName: user.firstName, lastName: user.lastName, fullName, phone: user.phone, username: user.username } };
 }
 
 // ---- OTP challenges ----

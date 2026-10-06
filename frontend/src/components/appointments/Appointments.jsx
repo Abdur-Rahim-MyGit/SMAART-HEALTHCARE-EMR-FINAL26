@@ -99,8 +99,9 @@ const Appointments = () => {
 
     const stats = {
       total: appointmentsData.length,
-      scheduled: appointmentsData.filter((apt) => apt.status === "Pending")
-        .length,
+      scheduled: appointmentsData.filter(
+        (apt) => apt.status === "Pending" || apt.status === "Scheduled"
+      ).length,
       confirmed: appointmentsData.filter((apt) => apt.status === "Confirmed")
         .length,
       completed: appointmentsData.filter((apt) => apt.status === "Completed")
@@ -109,14 +110,20 @@ const Appointments = () => {
         (apt) => apt.status === "Cancelled" || apt.status === "No Show"
       ).length,
       todayAppointments: appointmentsData.filter((apt) => {
-        const aptDate = new Date(apt.date).toISOString().split("T")[0];
-        return aptDate === todayStr;
+        const rawDate = apt.date || apt.appointmentDate || apt.scheduledAt;
+        if (!rawDate) return false;
+        const aptDate = new Date(rawDate);
+        if (isNaN(aptDate.getTime())) return false;
+        return aptDate.toISOString().split("T")[0] === todayStr;
       }).length,
       upcomingAppointments: appointmentsData.filter((apt) => {
-        const aptDate = new Date(apt.date);
+        const rawDate = apt.date || apt.appointmentDate || apt.scheduledAt;
+        if (!rawDate) return false;
+        const aptDate = new Date(rawDate);
         return (
+          !isNaN(aptDate.getTime()) &&
           aptDate > today &&
-          (apt.status === "Pending" || apt.status === "Confirmed")
+          (apt.status === "Pending" || apt.status === "Confirmed" || apt.status === "Scheduled")
         );
       }).length,
     };
@@ -149,7 +156,13 @@ const Appointments = () => {
 
     const matchesDate = () => {
       if (dateFilter === "") return true;
-      const appointmentDate = new Date(appointment.date);
+      const rawDate =
+        appointment.date ||
+        appointment.appointmentDate ||
+        appointment.scheduledAt;
+      if (!rawDate) return false;
+      const appointmentDate = new Date(rawDate);
+      if (isNaN(appointmentDate.getTime())) return false;
       const today = new Date();
 
       switch (dateFilter) {
@@ -187,10 +200,19 @@ const Appointments = () => {
         ?.toLowerCase()
         .includes(filters.doctor.toLowerCase());
 
-    const matchesSpecificDate =
-      !filters.specificDate ||
-      new Date(appointment.date).toISOString().split("T")[0] ===
-        filters.specificDate;
+    const matchesSpecificDate = (() => {
+      if (!filters.specificDate) return true;
+      const rawDate =
+        appointment.date ||
+        appointment.appointmentDate ||
+        appointment.scheduledAt;
+      if (!rawDate) return false;
+      const d = new Date(rawDate);
+      return (
+        !isNaN(d.getTime()) &&
+        d.toISOString().split("T")[0] === filters.specificDate
+      );
+    })();
 
     const matchesPriority =
       !filters.priority ||
@@ -213,39 +235,41 @@ const Appointments = () => {
 
   // Sort filtered appointments
   const sortedAppointments = [...filteredAppointments].sort((a, b) => {
-    switch (sortBy) {
-      case "latest":
-        // Sort by creation date (latest first), then by appointment date (latest first)
-        const createdAtDiff =
-          new Date(b.createdAt || b.updatedAt) -
-          new Date(a.createdAt || a.updatedAt);
-        if (createdAtDiff !== 0) return createdAtDiff;
-        return new Date(b.date) - new Date(a.date);
+    const rawDateA = a.date || a.appointmentDate || a.scheduledAt;
+    const rawDateB = b.date || b.appointmentDate || b.scheduledAt;
+    const dateA = rawDateA ? new Date(rawDateA).getTime() || 0 : 0;
+    const dateB = rawDateB ? new Date(rawDateB).getTime() || 0 : 0;
 
-      case "oldest":
-        // Sort by creation date (oldest first), then by appointment date (oldest first)
-        const createdAtDiffOld =
-          new Date(a.createdAt || a.updatedAt) -
-          new Date(b.createdAt || b.updatedAt);
+    switch (sortBy) {
+      case "latest": {
+        const createdB = new Date(b.createdAt || b.updatedAt || 0).getTime() || 0;
+        const createdA = new Date(a.createdAt || a.updatedAt || 0).getTime() || 0;
+        const createdAtDiff = createdB - createdA;
+        if (createdAtDiff !== 0) return createdAtDiff;
+        return dateB - dateA;
+      }
+
+      case "oldest": {
+        const createdB = new Date(b.createdAt || b.updatedAt || 0).getTime() || 0;
+        const createdA = new Date(a.createdAt || a.updatedAt || 0).getTime() || 0;
+        const createdAtDiffOld = createdA - createdB;
         if (createdAtDiffOld !== 0) return createdAtDiffOld;
-        return new Date(a.date) - new Date(b.date);
+        return dateA - dateB;
+      }
 
       case "appointment_date_asc":
-        // Sort by appointment date (earliest first)
-        return new Date(a.date) - new Date(b.date);
+        return dateA - dateB;
 
       case "appointment_date_desc":
-        // Sort by appointment date (latest first)
-        return new Date(b.date) - new Date(a.date);
+        return dateB - dateA;
 
-      case "patient_name":
-        // Sort by patient name alphabetically
+      case "patient_name": {
         const nameA = a.patientId?.fullName || a.patientName || "";
         const nameB = b.patientId?.fullName || b.patientName || "";
         return nameA.localeCompare(nameB);
+      }
 
       case "status":
-        // Sort by status
         return (a.status || "").localeCompare(b.status || "");
 
       default:
@@ -276,7 +300,9 @@ const Appointments = () => {
   };
 
   const formatAppointmentDate = (date) => {
+    if (!date) return "N/A";
     const appointmentDate = new Date(date);
+    if (isNaN(appointmentDate.getTime())) return "N/A";
     if (isToday(appointmentDate)) {
       return "Today";
     } else if (isTomorrow(appointmentDate)) {

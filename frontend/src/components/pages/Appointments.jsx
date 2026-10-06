@@ -55,9 +55,9 @@ const Appointments = () => {
                 a.doctorId.lastName || ""
               }`.trim()
             : "TBD",
-          date: a.appointmentDate
+          date: a.appointmentDate && !isNaN(new Date(a.appointmentDate).getTime())
             ? new Date(a.appointmentDate).toISOString().split("T")[0]
-            : "",
+            : (a.date || ""),
           time: a.timeSlot?.start || "",
           duration: "",
           location: a.clinicId?.name || "",

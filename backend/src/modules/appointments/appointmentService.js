@@ -34,13 +34,56 @@ function toDoc(input) {
   return d;
 }
 function serialize(r, { patient, doctor, clinic } = {}) {
-  return { ...serializeRow(r), date: r.scheduledAt, appointmentDate: r.scheduledAt, time: r.scheduledTime, duration: r.durationMinutes, type: r.appointmentType, provider: r.providerName, patientId: patient || ref(r.patientId), patientName: patient ? patient.fullName : null, phone: patient ? patient.phone : null, email: patient ? patient.email : null, doctorId: doctor || (r.practitionerId ? ref(r.practitionerId) : null), doctorName: doctor ? doctor.fullName : r.providerName, department: doctor ? doctor.specialty : null, clinicId: clinic ? ref(r.clinicId, clinic) : r.clinicId };
+  const scheduled = r.scheduledAt || combine(r.date || r.appointmentDate, r.time || r.scheduledTime) || (r.date ? new Date(r.date) : null);
+  const scheduledTime = r.scheduledTime || r.time || (scheduled instanceof Date && !isNaN(scheduled.getTime()) ? scheduled.toTimeString().slice(0, 5) : null);
+  return {
+    ...serializeRow(r),
+    date: scheduled || r.date || null,
+    appointmentDate: scheduled || r.date || null,
+    time: scheduledTime,
+    scheduledAt: scheduled || r.date || null,
+    scheduledTime,
+    duration: r.durationMinutes || r.duration || 30,
+    type: r.appointmentType || r.type || 'General Consultation',
+    appointmentType: r.appointmentType || r.type || 'General Consultation',
+    status: r.status || 'Scheduled',
+    priority: r.priority || 'normal',
+    provider: r.providerName || r.provider,
+    patientId: patient || ref(r.patientId),
+    patientName: patient ? patient.fullName : (r.patientName || null),
+    phone: patient ? patient.phone : (r.phone || null),
+    email: patient ? patient.email : (r.email || null),
+    doctorId: doctor || ((r.practitionerId || r.doctorId) ? ref(r.practitionerId || r.doctorId) : null),
+    doctorName: doctor ? doctor.fullName : (r.doctorName || r.providerName || r.provider || null),
+    department: doctor ? doctor.specialty : (r.department || null),
+    clinicId: clinic ? ref(r.clinicId, clinic) : r.clinicId,
+  };
 }
 async function hydrate(db, rows) {
   if (!rows.length) return [];
-  const [pmap, dmap, clinics] = await Promise.all([patients.refsFor(db, rows.map((r) => r.patientId)), practitioners.refsFor(db, rows.map((r) => r.practitionerId)), db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId))] } }, { projection: { name: 1, type: 1, city: 1, state: 1, phone: 1 } })]);
-  const cmap = Object.fromEntries(clinics.map((c) => [c._id, { name: c.name, type: c.type, city: c.city, state: c.state, phone: c.phone }]));
-  return rows.map((r) => serialize(r, { patient: pmap[r.patientId], doctor: dmap[r.practitionerId], clinic: cmap[r.clinicId] }));
+  const cleanClinicIds = [...new Set(rows.map((r) => r.clinicId).filter(Boolean))];
+  const queryClinicIds = cleanClinicIds.flatMap((id) => {
+    const s = String(id);
+    return (/^[0-9a-fA-F]{24}$/.test(s) ? [s, new (require('mongodb').ObjectId)(s)] : [id]);
+  });
+  const [pmap, dmap, clinics] = await Promise.all([
+    patients.refsFor(db, rows.map((r) => r.patientId)),
+    practitioners.refsFor(db, rows.map((r) => r.practitionerId || r.doctorId)),
+    queryClinicIds.length ? db.c('clinics').find({ _id: { $in: queryClinicIds } }, { projection: { name: 1, type: 1, city: 1, state: 1, phone: 1 } }) : []
+  ]);
+  const cmap = {};
+  for (const c of clinics) {
+    cmap[c._id] = { name: c.name, type: c.type, city: c.city, state: c.state, phone: c.phone };
+    cmap[String(c._id)] = cmap[c._id];
+  }
+  return rows.map((r) => {
+    const docId = r.practitionerId || r.doctorId;
+    return serialize(r, {
+      patient: pmap[r.patientId] || pmap[String(r.patientId)],
+      doctor: dmap[docId] || dmap[String(docId)],
+      clinic: cmap[r.clinicId] || cmap[String(r.clinicId)]
+    });
+  });
 }
 async function list(scope, { patientId, doctorId, status, from, to, clinicId, page, limit, offset }) {
   return withTenant(scope, async (db) => {

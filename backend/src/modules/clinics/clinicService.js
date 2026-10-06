@@ -14,7 +14,7 @@ const CLINIC_ADMIN_EDITABLE = ['phone', 'email', 'website', 'address', 'city', '
 
 function serializeClinic(row, { includeSensitive = false } = {}) {
   const s = serializeRow(row);
-  const out = { ...s, clinicId: row.clinicCode || row._id, validityPeriod: { startDate: row.validityStart, endDate: row.validityEnd, duration: row.validityDurationMonths, isExpired: new Date(row.validityEnd) < new Date(), renewalHistory: row.renewalHistory || [] }, status: row.isActive ? 'active' : 'inactive' };
+  const out = { ...s, clinicId: row.clinicCode || row._id, validityPeriod: { startDate: row.validityStart || null, endDate: row.validityEnd || null, duration: row.validityDurationMonths || 12, isExpired: row.validityEnd ? new Date(row.validityEnd) < new Date() : false, renewalHistory: row.renewalHistory || [] }, status: row.isActive ? 'active' : 'inactive' };
   delete out.validityStart; delete out.validityEnd; delete out.validityDurationMonths; delete out.renewalHistory;
   if (!includeSensitive) { delete out.bankInfo; delete out.taxId; delete out.settings; }
   return out;
@@ -24,6 +24,17 @@ function pick(input, fields) {
   for (const f of fields) if (input[f] !== undefined) out[f] = input[f] === '' && f !== 'name' ? null : input[f];
   if (out.email) out.email = String(out.email).toLowerCase();
   for (const f of ['specialties', 'services', 'paymentMethods']) if (out[f] !== undefined) out[f] = Array.isArray(out[f]) ? out[f] : [];
+  if (out.specialties !== undefined || out.services !== undefined) {
+    const list = [
+      ...new Set(
+        [...(out.specialties || []), ...(out.services || [])]
+          .map((s) => String(s || '').toLowerCase().trim())
+          .filter(Boolean)
+      ),
+    ];
+    out.specialties = list;
+    out.services = list;
+  }
   return out;
 }
 function validityFrom(input) {

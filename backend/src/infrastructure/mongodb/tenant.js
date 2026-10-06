@@ -44,18 +44,25 @@ class TenantCollection {
   /** Applies clinic scope and soft-delete visibility to a filter. */
   scoped(filter = {}, { includeDeleted = false } = {}) {
     const f = { ...filter };
+    if (f._id && typeof f._id === 'string' && /^[0-9a-fA-F]{24}$/.test(f._id)) {
+      const { ObjectId } = require('mongodb');
+      f._id = { $in: [f._id, new ObjectId(f._id)] };
+    }
     const tf = this.def.tenantField;
     if (this.def.softDelete && !includeDeleted && f.deletedAt === undefined) f.deletedAt = null;
     if (tf && !isGlobal(this.scope)) {
       if (!this.scope.clinicId) throw forbidden('Missing clinic scope', 'MISSING_CLINIC_SCOPE');
+      const cid = this.scope.clinicId;
+      const clinicVal = typeof cid === 'string' && /^[0-9a-fA-F]{24}$/.test(cid) ? { $in: [cid, new (require('mongodb').ObjectId)(cid)] } : cid;
       if (f[tf] !== undefined) {
-        // The caller's own tenant condition is kept but ANDed with the enforced clinic: asking for
-        // another clinic yields nothing (never an error that reveals existence), $in narrows to own clinic.
         const requested = f[tf];
         delete f[tf];
-        return { $and: [f, { [tf]: requested }, { [tf]: this.scope.clinicId }] };
+        return { $and: [f, { [tf]: requested }, { [tf]: clinicVal }] };
       }
-      f[tf] = this.scope.clinicId;
+      f[tf] = clinicVal;
+    } else if (tf && f[tf] && typeof f[tf] === 'string' && /^[0-9a-fA-F]{24}$/.test(f[tf])) {
+      const { ObjectId } = require('mongodb');
+      f[tf] = { $in: [f[tf], new ObjectId(f[tf])] };
     }
     return f;
   }
@@ -75,7 +82,13 @@ class TenantCollection {
     return this.col.findOne(this.scoped(filter, { includeDeleted }), this.opts({ projection }));
   }
   async findById(id, options) {
-    return this.findOne({ _id: id }, options);
+    if (!id) return null;
+    let queryId = id;
+    if (typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id)) {
+      const { ObjectId } = require('mongodb');
+      queryId = { $in: [id, new ObjectId(id)] };
+    }
+    return this.findOne({ _id: queryId }, options);
   }
   async count(filter, { includeDeleted } = {}) {
     return this.col.countDocuments(this.scoped(filter, { includeDeleted }), this.opts());

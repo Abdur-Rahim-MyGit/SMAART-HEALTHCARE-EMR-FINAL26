@@ -26,15 +26,17 @@ function displayName(user) {
 
 /** Shape the existing UI expects for a signed in user. */
 function publicUser(user, clinic) {
+  const id = String(user._id);
   const base = {
-    id: user._id,
-    _id: user._id,
+    id,
+    _id: id,
     firstName: user.firstName,
     lastName: user.lastName,
     fullName: displayName(user),
     email: user.email,
     role: user.role,
-    clinicId: user.clinicId || null,
+    clinicId: user.clinicId ? String(user.clinicId) : null,
+    clinic_id: user.clinicId ? String(user.clinicId) : null,
     phone: user.phone,
   };
   if (user.role === ROLES.CLINIC_ADMIN && clinic) {
@@ -48,19 +50,21 @@ async function checkLockAndPassword(db, user, password, ctx) {
   if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
     throw new AppError('ACCOUNT_LOCKED', 'Account temporarily locked after repeated failed sign-in attempts. Try again later.', 423);
   }
-  const { ok, needsRehash } = await verifyPassword(password, user.passwordHash);
+  const passwordHash = user.passwordHash || user.password;
+  if (!passwordHash) throw invalidCredentials();
+  const { ok, needsRehash } = await verifyPassword(password, passwordHash);
   if (!ok) {
     // Recorded in its own transaction: the caller's transaction is rolled back by the thrown error.
     await withSystem(async (db2) => {
-      const attempts = user.failedLoginAttempts + 1;
+      const attempts = (Number(user.failedLoginAttempts) || 0) + 1;
       const patch = { failedLoginAttempts: attempts };
       if (attempts >= MAX_FAILED_LOGINS) patch.lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000);
       await repo.updateUser(db2, user._id, patch);
-      await auditInTrx(db2, { userId: user._id, role: user.role, clinicId: user.clinicId }, { action: 'LOGIN_FAILURE', resourceType: 'user', resourceId: user._id, result: 'FAILURE', requestId: ctx.requestId, ip: ctx.ip, details: { attempts } });
+      await auditInTrx(db2, { userId: String(user._id), role: user.role, clinicId: user.clinicId ? String(user.clinicId) : null }, { action: 'LOGIN_FAILURE', resourceType: 'user', resourceId: String(user._id), result: 'FAILURE', requestId: ctx.requestId, ip: ctx.ip, details: { attempts } });
     });
     throw invalidCredentials();
   }
-  if (needsRehash) await repo.updateUser(db, user._id, { passwordHash: await hashPassword(password) });
+  if (needsRehash || !user.passwordHash) await repo.updateUser(db, user._id, { passwordHash: await hashPassword(password) });
   if (user.failedLoginAttempts || user.lockedUntil) await repo.updateUser(db, user._id, { failedLoginAttempts: 0, lockedUntil: null });
   return true;
 }
@@ -69,10 +73,12 @@ async function issueSession(db, user, ctx) {
   const env = config();
   const refreshToken = generateOpaqueToken();
   const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
-  const session = await repo.createSession(db, { userId: user._id, tokenHash: sha256(refreshToken), userAgent: ctx.userAgent, ip: ctx.ip, expiresAt });
-  const { token } = signAccessToken({ userId: user._id, role: user.role, clinicId: user.clinicId, sessionId: session._id });
+  const userIdStr = String(user._id);
+  const clinicIdStr = user.clinicId ? String(user.clinicId) : null;
+  const session = await repo.createSession(db, { userId: userIdStr, tokenHash: sha256(refreshToken), userAgent: ctx.userAgent, ip: ctx.ip, expiresAt });
+  const { token } = signAccessToken({ userId: userIdStr, role: user.role, clinicId: clinicIdStr, sessionId: session._id });
   await repo.updateUser(db, user._id, { lastLoginAt: new Date() });
-  await auditInTrx(db, { userId: user._id, role: user.role, clinicId: user.clinicId }, { action: 'LOGIN_SUCCESS', resourceType: 'user', resourceId: user._id, requestId: ctx.requestId, ip: ctx.ip, details: { sessionId: session._id, method: ctx.method } });
+  await auditInTrx(db, { userId: userIdStr, role: user.role, clinicId: clinicIdStr }, { action: 'LOGIN_SUCCESS', resourceType: 'user', resourceId: userIdStr, requestId: ctx.requestId, ip: ctx.ip, details: { sessionId: session._id, method: ctx.method } });
   return { accessToken: token, refreshToken, session };
 }
 

@@ -440,9 +440,21 @@ const Clinics = () => {
                     tanNumber: form.tanNumber || "",
                     bankAccountNumber: form.bankAccountNumber || "",
 
-                    // Services & specialties
-                    specialties: form.specialties || [],
-                    services: form.services || [],
+                    // Services & specialties (save lowercase in both service and specialties)
+                    specialties: [
+                      ...new Set(
+                        [...(form.specialties || []), ...(form.services || [])]
+                          .map((s) => String(s || "").toLowerCase().trim())
+                          .filter(Boolean)
+                      ),
+                    ],
+                    services: [
+                      ...new Set(
+                        [...(form.specialties || []), ...(form.services || [])]
+                          .map((s) => String(s || "").toLowerCase().trim())
+                          .filter(Boolean)
+                      ),
+                    ],
                     operatingHours: form.operatingHours || "",
 
                     // Infrastructure (convert to numbers)
@@ -1336,31 +1348,64 @@ const Clinics = () => {
                   </label>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {[
-                      "Physio",
-                      "Minds",
-                      "Balance",
-                      "Eyes",
-                      "ReproX",
-                      "Nutrition",
-                      "Blood parameters",
-                      "Pharmacy",
-                    ].map((service) => (
-                      <label key={service} className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={form.specialties.includes(service)}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              specialties: e.target.checked
-                                ? [...f.specialties, service]
-                                : f.specialties.filter((s) => s !== service),
-                            }))
-                          }
-                        />
-                        <span>{service}</span>
-                      </label>
-                    ))}
+                      "physio",
+                      "minds",
+                      "balance",
+                      "eyes",
+                      "repro x",
+                      "nutrition",
+                      "blood parameters",
+                      "pharmacy",
+                    ].map((service) => {
+                      const isSelected = [
+                        ...(form.specialties || []),
+                        ...(form.services || []),
+                      ].some(
+                        (s) =>
+                          String(s || "").toLowerCase().trim() === service ||
+                          String(s || "").toLowerCase().replace(/[\s_]+/g, "") === service.replace(/[\s_]+/g, "")
+                      );
+                      return (
+                        <label key={service} className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!isSelected}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setForm((f) => {
+                                const current = [
+                                  ...new Set(
+                                    [...(f.specialties || []), ...(f.services || [])]
+                                      .map((s) => String(s || "").toLowerCase().trim())
+                                      .filter(Boolean)
+                                  ),
+                                ];
+                                const exists = current.some(
+                                  (s) =>
+                                    s === service ||
+                                    s.replace(/[\s_]+/g, "") === service.replace(/[\s_]+/g, "")
+                                );
+                                const updated = isChecked
+                                  ? exists
+                                    ? current
+                                    : [...current, service]
+                                  : current.filter(
+                                      (s) =>
+                                        s !== service &&
+                                        s.replace(/[\s_]+/g, "") !== service.replace(/[\s_]+/g, "")
+                                    );
+                                return {
+                                  ...f,
+                                  specialties: updated,
+                                  services: updated,
+                                };
+                              });
+                            }}
+                          />
+                          <span>{service}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 

@@ -6,7 +6,7 @@ const { validate } = require('../../common/middleware/validate');
 const { asyncHandler } = require('../../common/middleware/asyncHandler');
 const { authLimiter } = require('../../common/middleware/rateLimit');
 const { authenticate } = require('../../common/middleware/authenticate');
-const { email } = require('../../common/validation/schemas');
+const { email, uuid } = require('../../common/validation/schemas');
 const { forbidden } = require('../../common/errors/AppError');
 const service = require('./authService');
 
@@ -58,7 +58,7 @@ router.post('/request-login-otp', limiter, validate({ body: credentials }), asyn
   res.json({ success: true, message: 'Login OTP sent to your email address. Please check your inbox.', userId: r.userId, expiresInMinutes: r.expiresInMinutes });
 }));
 
-router.post('/verify-login-otp', limiter, validate({ body: z.object({ userId: z.string().uuid(), otp: z.string().regex(/^\d{4,8}$/) }) }), asyncHandler(async (req, res) => {
+router.post('/verify-login-otp', limiter, validate({ body: z.object({ userId: uuid, otp: z.string().regex(/^\d{4,8}$/) }) }), asyncHandler(async (req, res) => {
   const r = await service.verifyLoginOtp(req.body, ctxOf(req));
   setRefreshCookie(res, r.refreshToken);
   res.json({ success: true, message: 'Login successful with OTP verification', token: r.accessToken, user: r.user });

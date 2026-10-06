@@ -2,7 +2,7 @@
 const crypto = require('crypto');
 const { withTenant, withSystem, clinicFilter } = require('../../infrastructure/mongodb/tenant');
 
-const record = (r) => ({ _id: crypto.randomUUID(), occurredAt: new Date(), userId: r.user_id ?? r.userId ?? null, role: r.role ?? null, clinicId: r.clinic_id ?? r.clinicId ?? null, action: r.action, resourceType: r.resource_type ?? r.resourceType ?? null, resourceId: r.resource_id ?? r.resourceId ?? null, ip: r.ip ?? null, userAgent: r.user_agent ?? r.userAgent ?? null, requestId: r.request_id ?? r.requestId ?? null, result: r.result ?? null, details: typeof r.details === 'string' ? JSON.parse(r.details || '{}') : r.details || {} });
+const record = (r) => ({ _id: crypto.randomUUID(), occurredAt: new Date(), userId: (r.user_id ?? r.userId) ? String(r.user_id ?? r.userId) : null, role: r.role ?? null, clinicId: (r.clinic_id ?? r.clinicId) ? String(r.clinic_id ?? r.clinicId) : null, action: r.action, resourceType: r.resource_type ?? r.resourceType ?? null, resourceId: (r.resource_id ?? r.resourceId) ? String(r.resource_id ?? r.resourceId) : null, ip: r.ip ?? null, userAgent: r.user_agent ?? r.userAgent ?? null, requestId: r.request_id ?? r.requestId ?? null, result: r.result ?? null, details: typeof r.details === 'string' ? JSON.parse(r.details || '{}') : r.details || {} });
 
 /** Append-only writer. Runs as system so denied requests are still recorded. */
 async function writeAudit(r) {

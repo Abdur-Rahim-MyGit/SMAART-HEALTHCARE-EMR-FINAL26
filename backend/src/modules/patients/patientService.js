@@ -147,14 +147,20 @@ async function remove(scope, id, ctx) {
 }
 /** Light-weight lookups used by other modules for "populated" references. */
 async function refsFor(db, ids) {
+  const { ObjectId } = require('mongodb');
   const clean = [...new Set(ids.filter(Boolean))];
   if (!clean.length) return {};
-  const rows = await db.c('patients').find({ _id: { $in: clean } }, { projection: { fullName: 1, phone: 1, email: 1, gender: 1, dateOfBirth: 1, attenderMobile: 1, profileDocumentId: 1, profileImageUrl: 1, bloodGroup: 1, address: 1 } });
-  const ids2 = await db.c('patient_identifiers').find({ patientId: { $in: clean }, system: 'uhid' });
+  const queryIds = clean.flatMap((id) => (typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id) ? [id, new ObjectId(id)] : [id]));
+  const rows = await db.c('patients').find({ _id: { $in: queryIds } }, { projection: { fullName: 1, phone: 1, email: 1, gender: 1, dateOfBirth: 1, attenderMobile: 1, profileDocumentId: 1, profileImageUrl: 1, bloodGroup: 1, address: 1 } });
+  const ids2 = await db.c('patient_identifiers').find({ patientId: { $in: queryIds }, system: 'uhid' });
   const uhid = Object.fromEntries(ids2.map((i) => [i.patientId, i.value]));
   const urls = await documents.urlsForIds(db, rows.map((r) => r.profileDocumentId));
   const out = {};
-  for (const r of rows) out[r._id] = ref(r._id, { fullName: r.fullName, phone: r.phone, email: r.email, gender: r.gender, age: age(r.dateOfBirth), dateOfBirth: r.dateOfBirth, attenderMobile: r.attenderMobile, uhid: uhid[r._id] || null, profileImage: urls[r.profileDocumentId] || r.profileImageUrl || null, bloodType: r.bloodGroup, address: r.address });
+  for (const r of rows) {
+    const val = ref(r._id, { fullName: r.fullName, phone: r.phone, email: r.email, gender: r.gender, age: age(r.dateOfBirth), dateOfBirth: r.dateOfBirth, attenderMobile: r.attenderMobile, uhid: uhid[r._id] || uhid[String(r._id)] || null, profileImage: urls[r.profileDocumentId] || r.profileImageUrl || null, bloodType: r.bloodGroup, address: r.address });
+    out[r._id] = val;
+    out[String(r._id)] = val;
+  }
   return out;
 }
 async function search(db, term, limit) {

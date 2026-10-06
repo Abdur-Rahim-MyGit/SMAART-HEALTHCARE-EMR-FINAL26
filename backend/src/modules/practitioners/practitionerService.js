@@ -26,14 +26,31 @@ function serialize(r, { clinic, profileUrl } = {}) {
   const s = serializeRow(r);
   const attrs = r.attributes || {};
   delete s.attributes;
-  return { ...attrs, ...s, role: r.kind, specialization: r.specialty, experience: r.experienceYears, profileImage: profileUrl || r.profileImageUrl || null, clinicId: clinic ? ref(r.clinicId, { name: clinic.name, address: clinic.address, phone: clinic.phone }) : r.clinicId, clinic: clinic ? ref(r.clinicId, { name: clinic.name }) : undefined };
+  return {
+    ...attrs,
+    ...s,
+    role: r.kind,
+    specialization: r.specialty,
+    experience: r.experienceYears,
+    profileImage: profileUrl || r.profileImageUrl || r.profileImage || null,
+    clinicName: clinic ? clinic.name : undefined,
+    clinicId: clinic ? ref(r.clinicId, { name: clinic.name, address: clinic.address, phone: clinic.phone }) : r.clinicId,
+    clinic: clinic ? ref(r.clinicId, { name: clinic.name }) : undefined
+  };
 }
 async function hydrate(db, rows) {
   if (!rows.length) return [];
-  const clinics = await db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId))] } }, { projection: { name: 1, address: 1, phone: 1 } });
-  const cmap = Object.fromEntries(clinics.map((c) => [c._id, c]));
+  const { ObjectId } = require('mongodb');
+  const cleanClinicIds = [...new Set(rows.map((r) => r.clinicId).filter(Boolean))];
+  const queryIds = cleanClinicIds.flatMap((id) => (typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id) ? [id, new ObjectId(id)] : [id]));
+  const clinics = queryIds.length ? await db.c('clinics').find({ _id: { $in: queryIds } }, { projection: { name: 1, address: 1, phone: 1 } }) : [];
+  const cmap = {};
+  for (const c of clinics) {
+    cmap[c._id] = c;
+    cmap[String(c._id)] = c;
+  }
   const urls = await documents.urlsForIds(db, rows.map((r) => r.profileDocumentId));
-  return rows.map((r) => serialize(r, { clinic: cmap[r.clinicId], profileUrl: urls[r.profileDocumentId] }));
+  return rows.map((r) => serialize(r, { clinic: cmap[r.clinicId] || cmap[String(r.clinicId)], profileUrl: urls[r.profileDocumentId] }));
 }
 async function list(scope, kind, { search, specialty, isActive, clinicId, page, limit, offset }) {
   return withTenant(scope, async (db) => {
@@ -100,10 +117,21 @@ async function stats(scope, kind) {
   });
 }
 async function refsFor(db, ids) {
+  const { ObjectId } = require('mongodb');
   const clean = [...new Set(ids.filter(Boolean))];
   if (!clean.length) return {};
-  const rows = await db.c('practitioners').find({ _id: { $in: clean } }, { projection: { fullName: 1, specialty: 1, phone: 1, email: 1, kind: 1, department: 1 } });
-  return Object.fromEntries(rows.map((r) => [r._id, ref(r._id, { fullName: r.fullName, name: r.fullName, specialty: r.specialty, specialization: r.specialty, phone: r.phone, email: r.email, role: r.kind, department: r.department })]));
+  const queryIds = clean.flatMap((id) => {
+    const s = String(id);
+    return (/^[0-9a-fA-F]{24}$/.test(s) ? [s, new ObjectId(s)] : [id]);
+  });
+  const rows = await db.c('practitioners').find({ _id: { $in: queryIds } }, { projection: { fullName: 1, specialty: 1, phone: 1, email: 1, kind: 1, department: 1 } });
+  const out = {};
+  for (const r of rows) {
+    const val = ref(r._id, { fullName: r.fullName, name: r.fullName, specialty: r.specialty, specialization: r.specialty, phone: r.phone, email: r.email, role: r.kind, department: r.department });
+    out[r._id] = val;
+    out[String(r._id)] = val;
+  }
+  return out;
 }
 async function assertPractitioner(db, scope, id, kind) {
   if (!id) return null;
