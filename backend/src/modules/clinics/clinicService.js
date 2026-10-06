@@ -67,13 +67,19 @@ async function create(scope, input, ctx) {
   if (problems.length) throw badRequest(`Admin password must contain ${problems.join(', ')}`, 'WEAK_PASSWORD');
   const adminEmail = String(input.adminEmail).toLowerCase();
   const passwordHash = await hashPassword(input.adminPassword);
-  return withTenant(scope, async (db) => {
-    if (await db.c('users').exists({ email: adminEmail })) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
-    const clinic = await db.c('clinics').insertOne({ ...pick(input, FIELDS), name: input.name, adminEmail, adminUsername: input.adminUsername || null, clinicCode: input.clinicId || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
-    const [firstName, ...rest] = String(input.adminName || 'Clinic Admin').split(' ');
-    const admin = await db.c('users').insertOne({ clinicId: clinic._id, role: ROLES.CLINIC_ADMIN, email: adminEmail, passwordHash, firstName, lastName: rest.join(' ') || null, fullName: input.adminName || null, phone: input.adminContact || null, username: input.adminUsername || null, isActive: true, isVerified: true, lastLoginAt: null, failedLoginAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
-    await auditInTrx(db, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic._id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin._id } });
-    await enqueueEvent(db, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic._id, clinicId: clinic._id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName: input.adminName } });
+  return withTenant(scope, async (trx) => {
+    const existingUser = await trx('users').whereRaw('lower(email::text) = ?', [adminEmail]).whereNull('deleted_at').first('id');
+    if (existingUser) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
+    const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
+    const [clinic] = await trx('clinics')
+      .insert({ ...toRow(input), admin_name: adminName, admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: input.clinicId || null, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
+      .returning('*');
+    const [firstName, ...rest] = adminName.split(' ');
+    const [admin] = await trx('users')
+      .insert({ clinic_id: clinic.id, role: ROLES.CLINIC_ADMIN, email: adminEmail, password_hash: passwordHash, first_name: firstName, last_name: rest.join(' ') || null, full_name: adminName, phone: input.adminContact || null, username: input.adminUsername || null, is_active: true, is_verified: true, created_by: scope.userId, updated_by: scope.userId })
+      .returning('id');
+    await auditInTrx(trx, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic.id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin.id } });
+    await enqueueEvent(trx, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic.id, clinicId: clinic.id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
     return serializeClinic(clinic, { includeSensitive: true });
   });
 }

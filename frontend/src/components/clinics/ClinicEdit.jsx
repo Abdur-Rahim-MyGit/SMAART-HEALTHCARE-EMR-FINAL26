@@ -154,6 +154,8 @@ const ClinicEdit = () => {
       errors.phone = "Phone Number must be exactly 10 digits";
     if (!form.email) errors.email = "Email Address is required";
     if (!form.ownerName) errors.ownerName = "Owner/Director Name is required";
+    if (!form.adminName || !String(form.adminName).trim())
+      errors.adminName = "Admin Name is required";
     if (!form.adminContact)
       errors.adminContact = "Admin Contact Number is required";
     else if (!/^\d{10}$/.test(form.adminContact))
@@ -233,6 +235,7 @@ const ClinicEdit = () => {
         // Ownership & Administration
         ownerName: form.ownerName,
         ownerMedicalId: form.ownerMedicalId,
+        adminName: String(form.adminName || "").trim(),
         adminContact: form.adminContact,
         adminEmail: form.adminEmail,
         adminUsername: form.adminUsername,
@@ -574,6 +577,27 @@ const ClinicEdit = () => {
                 {formErrors.ownerName && (
                   <div className="text-red-500 text-xs mt-1">
                     {formErrors.ownerName}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium">
+                  Admin Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className={`w-full px-3 py-2 bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    formErrors.adminName ? "border-red-500" : ""
+                  }`}
+                  name="adminName"
+                  required
+                  maxLength="120"
+                  placeholder="Full name of the clinic admin"
+                  value={form.adminName || ""}
+                  onChange={handleChange}
+                />
+                {formErrors.adminName && (
+                  <div className="text-red-500 text-xs mt-1">
+                    {formErrors.adminName}
                   </div>
                 )}
               </div>

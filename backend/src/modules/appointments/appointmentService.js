@@ -19,19 +19,25 @@ function combine(date, time) {
 function toDoc(input) {
   const d = {};
   const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : combine(input.date || input.appointmentDate, input.time);
-  if (scheduledAt) d.scheduledAt = scheduledAt;
-  if (input.time !== undefined) d.scheduledTime = input.time;
-  if (input.appointmentType !== undefined) d.appointmentType = input.appointmentType; else if (input.type !== undefined) d.appointmentType = input.type;
-  if (input.duration !== undefined) d.durationMinutes = Number(input.duration) || 30;
-  for (const k of ['status', 'priority', 'reason', 'notes', 'instructions', 'location']) if (input[k] !== undefined) d[k] = input[k];
-  if (input.isVirtual !== undefined) d.isVirtual = !!input.isVirtual;
-  if (input.meetingLink !== undefined) d.meetingLink = input.meetingLink;
-  if (input.followUpRequired !== undefined) d.followUpRequired = !!input.followUpRequired;
-  if (input.followUpDate !== undefined) d.followUpDate = input.followUpDate ? new Date(input.followUpDate) : null;
-  if (input.provider !== undefined) d.providerName = input.provider;
-  if (input.patientId !== undefined) d.patientId = input.patientId;
-  if (input.doctorId !== undefined) d.practitionerId = input.doctorId || null; else if (input.practitionerId !== undefined) d.practitionerId = input.practitionerId || null;
-  return d;
+  if (scheduledAt) row.scheduled_at = scheduledAt;
+  if (input.time !== undefined) row.scheduled_time = input.time;
+  if (input.appointmentType !== undefined) row.appointment_type = input.appointmentType;
+  else if (input.type !== undefined) row.appointment_type = input.type;
+  if (input.duration !== undefined) row.duration_minutes = Number(input.duration) || 30;
+  for (const k of ['status', 'priority', 'reason', 'notes', 'instructions', 'location']) if (input[k] !== undefined) row[k] = input[k];
+  // Body-map pain details from the Physio app booking (jsonb: stringify, or knex sends a Postgres array).
+  if (input.painAreas !== undefined) row.pain_areas = JSON.stringify(Array.isArray(input.painAreas) ? input.painAreas : []);
+  if (input.painLevel !== undefined) row.pain_level = input.painLevel === null || input.painLevel === '' ? null : Number(input.painLevel);
+  if (input.painDuration !== undefined) row.pain_duration = input.painDuration || null;
+  if (input.isVirtual !== undefined) row.is_virtual = !!input.isVirtual;
+  if (input.meetingLink !== undefined) row.meeting_link = input.meetingLink;
+  if (input.followUpRequired !== undefined) row.follow_up_required = !!input.followUpRequired;
+  if (input.followUpDate !== undefined) row.follow_up_date = input.followUpDate || null;
+  if (input.provider !== undefined) row.provider_name = input.provider;
+  if (input.patientId !== undefined) row.patient_id = input.patientId;
+  if (input.doctorId !== undefined) row.practitioner_id = input.doctorId || null;
+  else if (input.practitionerId !== undefined) row.practitioner_id = input.practitionerId || null;
+  return row;
 }
 function serialize(r, { patient, doctor, clinic } = {}) {
   const scheduled = r.scheduledAt || combine(r.date || r.appointmentDate, r.time || r.scheduledTime) || (r.date ? new Date(r.date) : null);

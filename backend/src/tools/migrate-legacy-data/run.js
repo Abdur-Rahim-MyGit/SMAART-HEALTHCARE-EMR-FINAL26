@@ -17,7 +17,7 @@ const mappers = require('./mappers');
 const { validate } = require('./validate');
 
 const NAMESPACE = 'a7b4d1e0-5c3f-4d2a-9e8b-1f2c3d4e5f60';
-const COLLECTIONS = ['clinics', 'users', 'doctors', 'nurses', 'patients', 'appointments', 'consultations', 'vitals', 'prescriptions', 'labreports', 'medicalimages', 'referrals', 'invoices', 'billings', 'teleconsultations', 'posts', 'patientcaselogs'];
+const COLLECTIONS = ['clinics', 'users', 'doctors', 'nurses', 'patients', 'appointments', 'consultations', 'vitals', 'prescriptions', 'labreports', 'medicalimages', 'referrals', 'invoices', 'billings', 'teleconsultations', 'posts', 'patientcaselogs', 'appointmentrequests'];
 const uuidFor = (collection, legacyId) => uuidv5(`${collection}:${String(legacyId)}`, NAMESPACE);
 
 /** snake_case mapper row → camelCase Mongo document (id → _id). */
