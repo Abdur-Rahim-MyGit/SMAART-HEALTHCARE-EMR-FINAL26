@@ -23,6 +23,7 @@ import { toast } from "react-hot-toast";
 import { format, isToday, isTomorrow, isYesterday, parseISO } from "date-fns";
 
 import { painLocation, painSummary } from "../../utils/painAreas";
+import { appointmentModeLabel } from "../../utils/appointmentMode";
 
 
 const Appointments = () => {
@@ -141,8 +142,8 @@ const Appointments = () => {
         ?.toLowerCase()
         .includes(searchTerm.toLowerCase()) ||
       appointment.reason?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.appointmentType
-        ?.toLowerCase()
+      appointmentModeLabel(appointment)
+        .toLowerCase()
         .includes(searchTerm.toLowerCase());
 
     const matchesStatus =
@@ -150,7 +151,7 @@ const Appointments = () => {
 
     const matchesType =
       appointmentTypeFilter === "" ||
-      appointment.appointmentType === appointmentTypeFilter;
+      appointmentModeLabel(appointment) === appointmentTypeFilter;
 
     const matchesDate = () => {
       if (dateFilter === "") return true;
@@ -881,6 +882,9 @@ const Appointments = () => {
                       {appointment.time || "17:30"} (
                       {appointment.duration || "30"}min)
                     </div>
+                    <div className={`text-xs mt-1 font-medium ${appointmentModeLabel(appointment) === "Virtual" ? "text-purple-600 dark:text-purple-400" : "text-teal-700 dark:text-teal-400"}`}>
+                      {appointmentModeLabel(appointment)}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
@@ -982,8 +986,7 @@ const Appointments = () => {
                 <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
                   <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</div>
                   <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">
-                    {selectedAppointment.appointmentType || selectedAppointment.type || "General Consultation"}
-                    {selectedAppointment.isVirtual ? " • Virtual" : ""}
+                    {appointmentModeLabel(selectedAppointment)}
                   </div>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">

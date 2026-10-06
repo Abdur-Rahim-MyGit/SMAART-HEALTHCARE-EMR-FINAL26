@@ -45,6 +45,7 @@ import {
   medicalImagesAPI,
 } from "../../services/api";
 import { painSummary } from "../../utils/painAreas";
+import { appointmentModeLabel } from "../../utils/appointmentMode";
 
 const PatientView = () => {
   // ============================================================================
@@ -332,7 +333,7 @@ const PatientView = () => {
         timelineEntries.push({
           id: `appointment-${appointment._id}`,
           type: "appointment",
-          title: `${appointment.appointmentType || "Appointment"} Scheduled`,
+          title: `${appointmentModeLabel(appointment)} Appointment Scheduled`,
           description: `Appointment with ${
             appointment.doctorId?.fullName || "Doctor"
           }${painSummary(appointment) ? ` • ${painSummary(appointment)}` : ""}`,
@@ -342,7 +343,7 @@ const PatientView = () => {
           timestamp: appointment.appointmentDate || appointment.createdAt,
           details: {
             time: appointment.time,
-            type: appointment.appointmentType,
+            type: appointmentModeLabel(appointment),
             status: appointment.status,
             notes: appointment.notes,
           },
@@ -2524,7 +2525,7 @@ const PatientProfileTab = ({
                 <div className="flex justify-between items-start">
                   <div>
                     <h4 className="font-medium text-gray-900 dark:text-white dark:text-white">
-                      {appointment.appointmentType || "General Consultation"}
+                      {appointmentModeLabel(appointment)} Appointment
                     </h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Doctor:{" "}
