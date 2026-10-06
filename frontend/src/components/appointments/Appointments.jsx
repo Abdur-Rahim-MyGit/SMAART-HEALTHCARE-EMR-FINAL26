@@ -879,8 +879,7 @@ const Appointments = () => {
                       {formatAppointmentDate(appointment.date)}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {appointment.time || "17:30"} (
-                      {appointment.duration || "30"}min)
+                      {appointment.time || "—"}
                     </div>
                     <div className={`text-xs mt-1 font-medium ${appointmentModeLabel(appointment) === "Virtual" ? "text-purple-600 dark:text-purple-400" : "text-teal-700 dark:text-teal-400"}`}>
                       {appointmentModeLabel(appointment)}
@@ -950,7 +949,7 @@ const Appointments = () => {
                   {selectedAppointment.patientId?.fullName || selectedAppointment.patientName || "Unknown Patient"}
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {formatAppointmentDate(selectedAppointment.date)} • {selectedAppointment.time || "—"} ({selectedAppointment.duration || 30} min)
+                  {formatAppointmentDate(selectedAppointment.date)} • {selectedAppointment.time || "—"}
                 </p>
               </div>
               <div className="flex items-center gap-3">
