@@ -51,36 +51,33 @@ async function hydrate(db, rows) {
   const cmap = Object.fromEntries(clinics.map((c) => [c._id, c]));
   const ids = await db.c('patient_identifiers').find({ patientId: { $in: rows.map((r) => r._id) } });
   const imap = {};
-  for (const i of ids) (imap[i.patient_id] = imap[i.patient_id] || []).push(i);
-  const urls = await documents.urlsForIds(trx, rows.map((r) => r.profile_document_id));
-  const doctorsByPatient = await doctorsFromAppointments(trx, rows.map((r) => r.id));
-  return rows.map((r) => serializePatient(r, { clinic: cmap[r.clinic_id], identifiers: imap[r.id] || [], profileUrl: urls[r.profile_document_id], assignedDoctors: doctorsByPatient[r.id] || [] }));
+  for (const i of ids) (imap[i.patientId] = imap[i.patientId] || []).push(i);
+  const urls = await documents.urlsForIds(db, rows.map((r) => r.profileDocumentId));
+  const doctorsByPatient = await doctorsFromAppointments(db, rows.map((r) => r._id));
+  return rows.map((r) => serializePatient(r, { clinic: cmap[r.clinicId], identifiers: imap[r._id] || [], profileUrl: urls[r.profileDocumentId], assignedDoctors: doctorsByPatient[String(r._id)] || [] }));
 }
-
 /**
  * The doctor(s) treating each patient, taken from their appointments (newest
  * first; cancelled and no-show ones skipped). Patients carry no doctor of their
- * own in this schema, so this is what the list's "Doctor:" line shows.
+ * own, so this is what the list's "Doctor:" line shows.
  */
-async function doctorsFromAppointments(trx, patientIds) {
+async function doctorsFromAppointments(db, patientIds) {
   const ids = [...new Set(patientIds.filter(Boolean))];
   if (!ids.length) return {};
-  const appts = await trx('appointments')
-    .whereIn('patient_id', ids)
-    .whereNotNull('practitioner_id')
-    .whereNull('deleted_at')
-    .whereNotIn('status', ['Cancelled', 'No Show'])
-    .select('patient_id', 'practitioner_id', 'scheduled_at')
-    .orderBy('scheduled_at', 'desc');
+  const appts = await db.c('appointments').find(
+    { patientId: { $in: ids }, practitionerId: { $nin: [null, ''] }, status: { $nin: ['Cancelled', 'No Show'] } },
+    { sort: { scheduledAt: -1 }, projection: { patientId: 1, practitionerId: 1 } }
+  );
   if (!appts.length) return {};
-  const practIds = [...new Set(appts.map((a) => a.practitioner_id))];
-  const practs = await trx('practitioners').whereIn('id', practIds).select('id', 'full_name', 'specialty', 'kind');
-  const pmap = Object.fromEntries(practs.map((d) => [d.id, ref(d.id, { fullName: d.full_name, name: d.full_name, specialty: d.specialty, role: d.kind })]));
+  const practIds = [...new Set(appts.map((a) => a.practitionerId).filter(Boolean))];
+  const practs = await db.c('practitioners').find({ _id: { $in: practIds } }, { projection: { fullName: 1, specialty: 1, kind: 1 } });
+  const pmap = {};
+  for (const d of practs) pmap[String(d._id)] = ref(d._id, { fullName: d.fullName, name: d.fullName, specialty: d.specialty, role: d.kind });
   const out = {};
   for (const a of appts) {
-    const doc = pmap[a.practitioner_id];
+    const doc = pmap[String(a.practitionerId)];
     if (!doc) continue;
-    const list = (out[a.patient_id] = out[a.patient_id] || []);
+    const list = (out[String(a.patientId)] = out[String(a.patientId)] || []);
     if (!list.some((d) => d.id === doc.id)) list.push(doc);
   }
   return out;

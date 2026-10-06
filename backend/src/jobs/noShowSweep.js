@@ -2,41 +2,42 @@
 /**
  * Automatic No Show for EMR appointments.
  *
- * Every minute, appointments still Scheduled or Confirmed whose scheduled_at is
+ * Every minute, appointments still Scheduled or Confirmed whose scheduledAt is
  * more than NO_SHOW_GRACE_MINUTES (default 10) in the past become "No Show".
  * Staff can still change the status by hand afterwards, and a visit that took
  * place should be marked Completed before the grace period ends, as before.
  *
- * Runs as the system role (bypasses tenant policies) and writes one audit row
+ * Runs as the system role (bypasses tenant scoping) and writes one audit row
  * per appointment so automatic no-shows are traceable.
  */
-const { getKnex } = require('../infrastructure/postgres/knex');
-const { withSystem } = require('../infrastructure/postgres/tenant');
+const { withSystem } = require('../infrastructure/mongodb/tenant');
+const { auditInTrx } = require('../modules/audit/auditRepository');
 const { getLogger } = require('../common/logging/logger');
 
 const graceMinutes = () => Math.max(0, Number(process.env.NO_SHOW_GRACE_MINUTES || 10));
 
-async function sweepNoShows(knex = getKnex()) {
+async function sweepNoShows() {
   const minutes = graceMinutes();
-  return withSystem(async (trx) => {
-    const rows = await trx('appointments')
-      .whereIn('status', ['Scheduled', 'Confirmed'])
-      .whereNull('deleted_at')
-      .where('scheduled_at', '<=', trx.raw(`now() - (? * interval '1 minute')`, [minutes]))
-      .update({ status: 'No Show' })
-      .returning(['id', 'clinic_id', 'patient_id']);
-    if (rows.length) {
-      await trx('audit_logs').insert(rows.map((r) => ({
-        clinic_id: r.clinic_id,
-        action: 'APPOINTMENT_NO_SHOW_AUTO',
-        resource_type: 'appointment',
-        resource_id: r.id,
-        result: 'SUCCESS',
-        details: JSON.stringify({ patientId: r.patient_id, graceMinutes: minutes }),
-      })));
+  const cutoff = new Date(Date.now() - minutes * 60 * 1000);
+  return withSystem(async (db) => {
+    const col = db.c('appointments');
+    const due = await col.find(
+      { status: { $in: ['Scheduled', 'Confirmed'] }, scheduledAt: { $lte: cutoff } },
+      { projection: { _id: 1, clinicId: 1, patientId: 1, status: 1 } }
+    );
+    let marked = 0;
+    for (const a of due) {
+      // Only if nobody changed it in the meantime.
+      const updated = await col.updateOne({ _id: a._id, status: a.status }, { status: 'No Show', noShowAt: new Date(), noShowAuto: true });
+      if (!updated) continue;
+      marked++;
+      await auditInTrx(db, { role: 'system', clinicId: a.clinicId, userId: null }, {
+        action: 'APPOINTMENT_NO_SHOW_AUTO', resourceType: 'appointment', resourceId: a._id,
+        details: { patientId: a.patientId, graceMinutes: minutes },
+      });
     }
-    return rows.length;
-  }, knex);
+    return marked;
+  });
 }
 
 let timer = null;
