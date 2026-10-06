@@ -22,39 +22,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "react-hot-toast";
 import { format, isToday, isTomorrow, isYesterday, parseISO } from "date-fns";
 
-/**
- * Body-map ids from the Physio app are slugs such as "right_knee", "lower_back"
- * or "left_shoulder_back". Shown as "Knee (Right)", "Lower Back",
- * "Shoulder (Left, Back)": the part first, then the side in brackets.
- */
-const painAreaLabel = (a) => {
-  const tokens = String(a.bodyPart || "").toLowerCase().split(/[_\s]+/).filter(Boolean);
-  const qualifiers = [];
-  const parts = [];
-  const hasSide = tokens.includes("left") || tokens.includes("right");
-  tokens.forEach((t, i) => {
-    if (t === "left" || t === "right") qualifiers.push(t);
-    else if (t === "back" && hasSide && i === tokens.length - 1 && parts.length > 0) qualifiers.push("back");
-    else parts.push(t);
-  });
-  if (a.side && a.side !== "center" && !qualifiers.includes(a.side)) qualifiers.unshift(a.side);
-  const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
-  const name = parts.map(cap).join(" ");
-  return qualifiers.length ? `${name} (${qualifiers.map(cap).join(", ")})` : name;
-};
-
-/** "Knee (Right), Lower Back" from the body-map selection; '' when none. */
-const painLocation = (areas) => {
-  if (!Array.isArray(areas) || areas.length === 0) return "";
-  const seen = new Set();
-  const out = [];
-  for (const a of areas) {
-    if (!a || !a.bodyPart) continue;
-    const label = painAreaLabel(a);
-    if (label && !seen.has(label.toLowerCase())) { seen.add(label.toLowerCase()); out.push(label); }
-  }
-  return out.join(", ");
-};
+import { painLocation, painSummary } from "../../utils/painAreas";
 
 
 const Appointments = () => {
@@ -65,6 +33,8 @@ const Appointments = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  // Row click opens the details dialog.
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [sortBy, setSortBy] = useState("latest");
 
   // Enhanced search filters
@@ -801,7 +771,8 @@ const Appointments = () => {
               {sortedAppointments.map((appointment) => (
                 <tr
                   key={appointment._id}
-                  className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-green-50 dark:hover:from-gray-800 dark:hover:to-gray-800 transition-all duration-200 border-l-4 border-transparent hover:border-[#004D99] dark:hover:border-blue-400"
+                  onClick={() => setSelectedAppointment(appointment)}
+                  className="cursor-pointer hover:bg-gradient-to-r hover:from-blue-50 hover:to-green-50 dark:hover:from-gray-800 dark:hover:to-gray-800 transition-all duration-200 border-l-4 border-transparent hover:border-[#004D99] dark:hover:border-blue-400"
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -958,6 +929,104 @@ const Appointments = () => {
           </div>
         )}
       </div>
+
+      {/* Appointment details */}
+      {selectedAppointment && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setSelectedAppointment(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-950 shadow-2xl border border-gray-100 dark:border-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between p-6 border-b border-gray-100 dark:border-gray-800">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {selectedAppointment.patientId?.fullName || selectedAppointment.patientName || "Unknown Patient"}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {formatAppointmentDate(selectedAppointment.date)} • {selectedAppointment.time || "—"} ({selectedAppointment.duration || 30} min)
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(selectedAppointment.status)}`}>
+                  {selectedAppointment.status}
+                </span>
+                <button
+                  onClick={() => setSelectedAppointment(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  aria-label="Close"
+                >
+                  <XCircle className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Doctor</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">
+                    {selectedAppointment.doctorId?.fullName ? `Dr. ${selectedAppointment.doctorId.fullName}` : selectedAppointment.doctorName || "Not assigned"}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{selectedAppointment.doctorId?.specialty || selectedAppointment.department || ""}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Clinic</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">{selectedAppointment.clinicId?.name || "—"}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {[selectedAppointment.clinicId?.city, selectedAppointment.clinicId?.state].filter(Boolean).join(", ")}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">
+                    {selectedAppointment.appointmentType || selectedAppointment.type || "General Consultation"}
+                    {selectedAppointment.isVirtual ? " • Virtual" : ""}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">{(selectedAppointment.priority || "normal").toUpperCase()}</div>
+                </div>
+              </div>
+
+              {painSummary(selectedAppointment) && (
+                <div className="rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 p-4">
+                  <div className="text-xs font-medium text-rose-700 dark:text-rose-300 uppercase tracking-wider">Pain Location</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">{painLocation(selectedAppointment.painAreas)}</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                    {[
+                      selectedAppointment.painLevel ? `Pain ${selectedAppointment.painLevel}/10` : null,
+                      selectedAppointment.painDuration || null,
+                    ].filter(Boolean).join(" • ")}
+                  </div>
+                </div>
+              )}
+
+              {selectedAppointment.reason && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Reason for Visit</div>
+                  <p className="text-sm text-gray-900 dark:text-white whitespace-pre-line">{selectedAppointment.reason}</p>
+                </div>
+              )}
+              {selectedAppointment.notes && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Notes</div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{selectedAppointment.notes}</p>
+                </div>
+              )}
+              {selectedAppointment.instructions && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Instructions</div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{selectedAppointment.instructions}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

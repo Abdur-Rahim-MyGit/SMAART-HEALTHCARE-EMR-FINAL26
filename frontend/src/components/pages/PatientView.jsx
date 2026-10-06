@@ -44,6 +44,7 @@ import {
   labReportsAPI,
   medicalImagesAPI,
 } from "../../services/api";
+import { painSummary } from "../../utils/painAreas";
 
 const PatientView = () => {
   // ============================================================================
@@ -334,7 +335,7 @@ const PatientView = () => {
           title: `${appointment.appointmentType || "Appointment"} Scheduled`,
           description: `Appointment with ${
             appointment.doctorId?.fullName || "Doctor"
-          }`,
+          }${painSummary(appointment) ? ` • ${painSummary(appointment)}` : ""}`,
           performedBy: appointment.doctorId?.fullName
             ? `Dr. ${appointment.doctorId.fullName || ""}`
             : "Doctor",
