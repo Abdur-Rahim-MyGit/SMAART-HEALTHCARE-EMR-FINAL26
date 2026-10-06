@@ -51,7 +51,10 @@ const clinicBase = {
   clinicId: optionalString(60),
   validityPeriod,
 };
-const createSchema = z.object({ ...clinicBase, adminEmail: email, adminName: z.string().trim().min(1).max(120), adminPassword: z.string().min(8).max(200) }).passthrough();
+// adminName stays optional (clinicBase): the Add Clinic form shipped for a while
+// without an Admin Name input and every submission failed on it. The service
+// falls back to the owner's name for the admin account when it is blank.
+const createSchema = z.object({ ...clinicBase, adminEmail: email, adminPassword: z.string().min(8).max(200) }).passthrough();
 const updateSchema = z.object({ ...clinicBase, name: clinicBase.name.optional() }).passthrough();
 
 router.get('/', authorize('clinics:read'), asyncHandler(async (req, res) => {

@@ -96,15 +96,16 @@ async function create(scope, input, ctx) {
   return withTenant(scope, async (trx) => {
     const existingUser = await trx('users').whereRaw('lower(email::text) = ?', [adminEmail]).whereNull('deleted_at').first('id');
     if (existingUser) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
+    const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
     const [clinic] = await trx('clinics')
-      .insert({ ...toRow(input), admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: input.clinicId || null, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
+      .insert({ ...toRow(input), admin_name: adminName, admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: input.clinicId || null, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
       .returning('*');
-    const [firstName, ...rest] = String(input.adminName || 'Clinic Admin').split(' ');
+    const [firstName, ...rest] = adminName.split(' ');
     const [admin] = await trx('users')
-      .insert({ clinic_id: clinic.id, role: ROLES.CLINIC_ADMIN, email: adminEmail, password_hash: passwordHash, first_name: firstName, last_name: rest.join(' ') || null, full_name: input.adminName || null, phone: input.adminContact || null, username: input.adminUsername || null, is_active: true, is_verified: true, created_by: scope.userId, updated_by: scope.userId })
+      .insert({ clinic_id: clinic.id, role: ROLES.CLINIC_ADMIN, email: adminEmail, password_hash: passwordHash, first_name: firstName, last_name: rest.join(' ') || null, full_name: adminName, phone: input.adminContact || null, username: input.adminUsername || null, is_active: true, is_verified: true, created_by: scope.userId, updated_by: scope.userId })
       .returning('id');
     await auditInTrx(trx, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic.id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin.id } });
-    await enqueueEvent(trx, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic.id, clinicId: clinic.id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName: input.adminName } });
+    await enqueueEvent(trx, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic.id, clinicId: clinic.id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
     return serializeClinic(clinic, { includeSensitive: true });
   }, getKnex());
 }

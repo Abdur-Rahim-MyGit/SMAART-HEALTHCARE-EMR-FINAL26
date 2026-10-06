@@ -344,6 +344,8 @@ const Clinics = () => {
                     errors.email = "Invalid Email Address";
                   if (!form.ownerName)
                     errors.ownerName = "Owner/Director Name is required";
+                  if (!form.adminName || !form.adminName.trim())
+                    errors.adminName = "Admin Name is required";
                   if (!form.adminContact)
                     errors.adminContact = "Admin Contact Number is required";
                   else if (!/^\d{10}$/.test(form.adminContact))
@@ -356,9 +358,9 @@ const Clinics = () => {
                     errors.adminUsername = "Admin Username is required";
                   if (!form.adminPassword)
                     errors.adminPassword = "Admin Password is required";
-                  else if (form.adminPassword.length < 6)
+                  else if (form.adminPassword.length < 8)
                     errors.adminPassword =
-                      "Password must be at least 6 characters";
+                      "Password must be at least 8 characters";
 
                   // Legal & Compliance validation
                   if (form.gstNumber && form.gstNumber.length !== 15)
@@ -428,7 +430,7 @@ const Clinics = () => {
                     ownerMedicalId: form.ownerMedicalId || "",
 
                     // Admin info
-                    adminName: form.adminName || "",
+                    adminName: form.adminName.trim(),
                     adminContact: form.adminContact,
                     adminEmail: form.adminEmail,
                     adminUsername: form.adminUsername,
@@ -885,6 +887,28 @@ const Clinics = () => {
                     {formErrors.ownerName && (
                       <div className="text-red-500 text-xs mt-1">
                         {formErrors.ownerName}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium">
+                      Admin Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      className={`form-input w-full ${
+                        formErrors.adminName ? "border-red-500" : ""
+                      }`}
+                      required
+                      value={form.adminName}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, adminName: e.target.value }))
+                      }
+                      placeholder="Full name of the clinic admin"
+                      maxLength="120"
+                    />
+                    {formErrors.adminName && (
+                      <div className="text-red-500 text-xs mt-1">
+                        {formErrors.adminName}
                       </div>
                     )}
                   </div>
