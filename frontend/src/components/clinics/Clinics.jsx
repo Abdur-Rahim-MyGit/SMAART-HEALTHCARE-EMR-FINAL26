@@ -2136,9 +2136,12 @@ const Clinics = () => {
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          Admin Contact
+                          Admin
                         </label>
                         <p className="text-gray-900 dark:text-white font-semibold">
+                          {selectedClinic.adminName || 'N/A'}
+                        </p>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">
                           {selectedClinic.adminContact || 'N/A'}
                         </p>
                         <p className="text-gray-600 dark:text-gray-400 text-sm">
