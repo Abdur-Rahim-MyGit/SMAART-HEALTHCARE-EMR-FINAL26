@@ -2538,6 +2538,16 @@ const PatientProfileTab = ({
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Time: {appointment.time || "N/A"}
                     </p>
+                    {painSummary(appointment) && (
+                      <p className="text-xs text-rose-700 dark:text-rose-400 mt-1">
+                        Pain: {painSummary(appointment)}
+                      </p>
+                    )}
+                    {appointment.reason && (
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                        Reason: {appointment.reason}
+                      </p>
+                    )}
                   </div>
                   <span
                     className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
