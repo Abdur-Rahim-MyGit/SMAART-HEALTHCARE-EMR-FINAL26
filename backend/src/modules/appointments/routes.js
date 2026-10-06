@@ -34,6 +34,10 @@ const body = z.object({
   meetingLink: optionalString(500),
   followUpRequired: z.boolean().optional(),
   followUpDate: z.union([z.coerce.date(), z.literal(''), z.null()]).optional(),
+  // Where it hurts, from the Physio app's body map.
+  painAreas: z.array(z.object({ bodyPart: z.string().trim().min(1).max(80), side: z.enum(['left', 'right', 'center']).optional().nullable(), severity: z.coerce.number().min(0).max(10).optional().nullable() }).passthrough()).max(30).optional(),
+  painLevel: z.union([z.coerce.number().int().min(0).max(10), z.literal(''), z.null()]).optional(),
+  painDuration: optionalString(60),
   version: z.coerce.number().int().optional(),
 }).passthrough();
 

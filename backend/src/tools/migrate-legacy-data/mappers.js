@@ -80,10 +80,22 @@ async function buildPlan(src, { uuidFor, report, hashPassword, ROLES }) {
   const okPatient = (v) => { const id = pid(v); return id && patientIds.has(id) ? id : null; };
 
   // ---- appointments ----
+  // Pain details: paid Physio-app bookings keep them on the appointment
+  // (booking.problem); reception-confirmed ones are linked from the request.
+  const painByAppointment = new Map();
+  for (const r of src.appointmentrequests || []) {
+    if (r.appointmentId && Array.isArray(r.painAreas) && r.painAreas.length) painByAppointment.set(String(r.appointmentId), r);
+  }
+  const painOf = (a) => {
+    const b = a.booking && a.booking.problem;
+    if (b && Array.isArray(b.painAreas) && b.painAreas.length) return b;
+    return painByAppointment.get(String(a._id)) || null;
+  };
   for (const a of src.appointments) {
     const patient = okPatient(a.patientId); const clinic = cid(a.clinicId);
     if (!patient || !clinic) { report.warnings.push(`appointment ${a._id}: orphan, skipped`); continue; }
-    tables.appointments.push({ __legacy: legacy('appointments', a._id), id: uuidFor('appointments', a._id), clinic_id: clinic, patient_id: patient, practitioner_id: pract(a.doctorId), appointment_type: str(a.appointmentType) || 'General Consultation', scheduled_at: combine(a.date || a.appointmentDate, a.time) || date(a.createdAt) || new Date(), scheduled_time: str(a.time), duration_minutes: Math.min(480, Math.max(5, num(a.duration) || 30)), status: ['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show'].includes(a.status) ? a.status : 'Scheduled', priority: ['low', 'normal', 'high'].includes(a.priority) ? a.priority : 'normal', reason: str(a.reason), notes: str(a.notes), instructions: str(a.instructions), location: str(a.location), provider_name: str(a.provider), is_virtual: !!a.isVirtual, meeting_link: str(a.meetingLink), follow_up_required: !!a.followUpRequired, follow_up_date: date(a.followUpDate), reminder_sent: !!a.reminderSent, created_at: date(a.createdAt) || new Date() });
+    const pain = painOf(a);
+    tables.appointments.push({ __legacy: legacy('appointments', a._id), id: uuidFor('appointments', a._id), clinic_id: clinic, patient_id: patient, practitioner_id: pract(a.doctorId), appointment_type: str(a.appointmentType) || 'General Consultation', scheduled_at: combine(a.date || a.appointmentDate, a.time) || date(a.createdAt) || new Date(), scheduled_time: str(a.time), duration_minutes: Math.min(480, Math.max(5, num(a.duration) || 30)), status: ['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show'].includes(a.status) ? a.status : 'Scheduled', priority: ['low', 'normal', 'high'].includes(a.priority) ? a.priority : 'normal', reason: str(a.reason), notes: str(a.notes), instructions: str(a.instructions), location: str(a.location), provider_name: str(a.provider), is_virtual: !!a.isVirtual, meeting_link: str(a.meetingLink), follow_up_required: !!a.followUpRequired, follow_up_date: date(a.followUpDate), reminder_sent: !!a.reminderSent, pain_areas: json(pain ? pain.painAreas : [], []), pain_level: pain ? num(pain.painLevel) : null, pain_duration: pain ? str(pain.painDuration) : null, created_at: date(a.createdAt) || new Date() });
   }
 
   // ---- consultations → encounters (+ clinical notes in Mongo) ----

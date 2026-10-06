@@ -35,6 +35,10 @@ function toRow(input) {
   else if (input.type !== undefined) row.appointment_type = input.type;
   if (input.duration !== undefined) row.duration_minutes = Number(input.duration) || 30;
   for (const k of ['status', 'priority', 'reason', 'notes', 'instructions', 'location']) if (input[k] !== undefined) row[k] = input[k];
+  // Body-map pain details from the Physio app booking (jsonb: stringify, or knex sends a Postgres array).
+  if (input.painAreas !== undefined) row.pain_areas = JSON.stringify(Array.isArray(input.painAreas) ? input.painAreas : []);
+  if (input.painLevel !== undefined) row.pain_level = input.painLevel === null || input.painLevel === '' ? null : Number(input.painLevel);
+  if (input.painDuration !== undefined) row.pain_duration = input.painDuration || null;
   if (input.isVirtual !== undefined) row.is_virtual = !!input.isVirtual;
   if (input.meetingLink !== undefined) row.meeting_link = input.meetingLink;
   if (input.followUpRequired !== undefined) row.follow_up_required = !!input.followUpRequired;
