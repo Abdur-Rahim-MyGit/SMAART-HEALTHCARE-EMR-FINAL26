@@ -1,7 +1,5 @@
 'use strict';
-const { getKnex } = require('../../infrastructure/postgres/knex');
-const { withTenant } = require('../../infrastructure/postgres/tenant');
-const { BaseRepository } = require('../../infrastructure/postgres/BaseRepository');
+const { withTenant } = require('../../infrastructure/mongodb/tenant');
 const { ROLES } = require('../../common/security/rbac');
 const { notFound, badRequest } = require('../../common/errors/AppError');
 const { serializeRow, ref } = require('../../common/utils/serialize');
@@ -10,139 +8,95 @@ const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository')
 const patients = require('../patients/patientService');
 const encounters = require('../encounters/encounterService');
 
-const repo = new BaseRepository('vitals');
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 const val = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
-
-function bmiCategory(bmi) {
-  if (!bmi) return null;
-  if (bmi < 18.5) return 'Underweight';
-  if (bmi < 25) return 'Normal';
-  if (bmi < 30) return 'Overweight';
-  return 'Obese';
-}
-
-/** Accepts both the legacy nested `vitalSigns` shape and flat fields. */
-function toRow(input) {
+function bmiCategory(bmi) { if (!bmi) return null; if (bmi < 18.5) return 'Underweight'; if (bmi < 25) return 'Normal'; if (bmi < 30) return 'Overweight'; return 'Obese'; }
+function toDoc(input) {
   const vs = input.vitalSigns || input;
-  const row = {};
-  if (input.patientId !== undefined) row.patient_id = input.patientId;
-  if (input.encounterId !== undefined) row.encounter_id = input.encounterId || null;
-  if (input.visitDate !== undefined || input.recordedAt !== undefined) row.recorded_at = new Date(input.recordedAt || input.visitDate);
-  if (input.recordedBy !== undefined) row.recorded_by = input.recordedBy || null;
-  if (input.recordedByName !== undefined) row.recorded_by_name = input.recordedByName;
-  if (input.recordedByRole !== undefined) row.recorded_by_role = input.recordedByRole;
+  const d = {};
+  if (input.patientId !== undefined) d.patientId = input.patientId;
+  if (input.encounterId !== undefined) d.encounterId = input.encounterId || null;
+  if (input.visitDate !== undefined || input.recordedAt !== undefined) d.recordedAt = new Date(input.recordedAt || input.visitDate);
+  if (input.recordedBy !== undefined) d.recordedBy = input.recordedBy || null;
+  if (input.recordedByName !== undefined) d.recordedByName = input.recordedByName;
+  if (input.recordedByRole !== undefined) d.recordedByRole = input.recordedByRole;
   const bp = vs.bloodPressure || {};
-  if (bp.systolic !== undefined || vs.systolic !== undefined) row.systolic = num(bp.systolic ?? vs.systolic);
-  if (bp.diastolic !== undefined || vs.diastolic !== undefined) row.diastolic = num(bp.diastolic ?? vs.diastolic);
-  if (vs.heartRate !== undefined) row.heart_rate = num(val(vs.heartRate));
-  if (vs.temperature !== undefined) { row.temperature = num(val(vs.temperature)); if (vs.temperature && vs.temperature.unit) row.temperature_unit = vs.temperature.unit; }
-  if (vs.temperatureUnit) row.temperature_unit = vs.temperatureUnit;
-  if (vs.respiratoryRate !== undefined) row.respiratory_rate = num(val(vs.respiratoryRate));
-  if (vs.oxygenSaturation !== undefined) row.oxygen_saturation = num(val(vs.oxygenSaturation));
-  if (vs.weight !== undefined) row.weight_kg = num(val(vs.weight));
-  if (vs.height !== undefined) row.height_cm = num(val(vs.height));
-  if (vs.bloodSugar !== undefined) row.blood_sugar = num(val(vs.bloodSugar));
-  if (vs.painScore !== undefined) row.pain_score = num(val(vs.painScore));
+  if (bp.systolic !== undefined || vs.systolic !== undefined) d.systolic = num(bp.systolic ?? vs.systolic);
+  if (bp.diastolic !== undefined || vs.diastolic !== undefined) d.diastolic = num(bp.diastolic ?? vs.diastolic);
+  if (vs.heartRate !== undefined) d.heartRate = num(val(vs.heartRate));
+  if (vs.temperature !== undefined) { d.temperature = num(val(vs.temperature)); if (vs.temperature && vs.temperature.unit) d.temperatureUnit = vs.temperature.unit; }
+  if (vs.temperatureUnit) d.temperatureUnit = vs.temperatureUnit;
+  if (vs.respiratoryRate !== undefined) d.respiratoryRate = num(val(vs.respiratoryRate));
+  if (vs.oxygenSaturation !== undefined) d.oxygenSaturation = num(val(vs.oxygenSaturation));
+  if (vs.weight !== undefined) d.weightKg = num(val(vs.weight));
+  if (vs.height !== undefined) d.heightCm = num(val(vs.height));
+  if (vs.bloodSugar !== undefined) d.bloodSugar = num(val(vs.bloodSugar));
+  if (vs.painScore !== undefined) d.painScore = num(val(vs.painScore));
   const bmiIn = vs.bmi !== undefined ? num(val(vs.bmi)) : null;
-  if (bmiIn) row.bmi = bmiIn;
-  else if (row.weight_kg && row.height_cm) row.bmi = Math.round((row.weight_kg / (row.height_cm / 100) ** 2) * 10) / 10;
-  if (row.bmi !== undefined) row.bmi_category = bmiCategory(row.bmi);
-  if (input.notes !== undefined) row.notes = input.notes;
-  if (input.clinicalNotes !== undefined) row.clinical_notes = JSON.stringify(input.clinicalNotes || {});
-  return row;
+  if (bmiIn) d.bmi = bmiIn; else if (d.weightKg && d.heightCm) d.bmi = Math.round((d.weightKg / (d.heightCm / 100) ** 2) * 10) / 10;
+  if (d.bmi !== undefined) d.bmiCategory = bmiCategory(d.bmi);
+  if (input.notes !== undefined) d.notes = input.notes;
+  if (input.clinicalNotes !== undefined) d.clinicalNotes = input.clinicalNotes || {};
+  return d;
 }
-
 function serialize(r, { patient, clinic } = {}) {
-  const s = serializeRow(r);
-  const unit = r.temperature_unit || '°F';
-  return {
-    ...s,
-    visitDate: r.recorded_at,
-    patientId: patient || ref(r.patient_id),
-    uhid: patient ? patient.uhid : undefined,
-    clinicId: clinic ? ref(r.clinic_id, { name: clinic.name }) : r.clinic_id,
-    vitalSigns: {
-      bloodPressure: { systolic: r.systolic, diastolic: r.diastolic },
-      heartRate: { value: r.heart_rate, unit: 'bpm' },
-      temperature: { value: r.temperature, unit },
-      respiratoryRate: { value: r.respiratory_rate, unit: '/min' },
-      oxygenSaturation: { value: r.oxygen_saturation, unit: '%' },
-      weight: { value: r.weight_kg, unit: 'kg' },
-      height: { value: r.height_cm, unit: 'cm' },
-      bmi: { value: r.bmi, category: r.bmi_category },
-      bloodSugar: { value: r.blood_sugar, unit: 'mg/dL' },
-      painScore: r.pain_score,
-    },
-  };
+  const unit = r.temperatureUnit || '°F';
+  return { ...serializeRow(r), visitDate: r.recordedAt, patientId: patient || ref(r.patientId), uhid: patient ? patient.uhid : undefined, clinicId: clinic ? ref(r.clinicId, { name: clinic.name }) : r.clinicId, vitalSigns: { bloodPressure: { systolic: r.systolic, diastolic: r.diastolic }, heartRate: { value: r.heartRate, unit: 'bpm' }, temperature: { value: r.temperature, unit }, respiratoryRate: { value: r.respiratoryRate, unit: '/min' }, oxygenSaturation: { value: r.oxygenSaturation, unit: '%' }, weight: { value: r.weightKg, unit: 'kg' }, height: { value: r.heightCm, unit: 'cm' }, bmi: { value: r.bmi, category: r.bmiCategory }, bloodSugar: { value: r.bloodSugar, unit: 'mg/dL' }, painScore: r.painScore } };
 }
-
-async function hydrate(trx, rows) {
+async function hydrate(db, rows) {
   if (!rows.length) return [];
-  const pmap = await patients.refsFor(trx, rows.map((r) => r.patient_id));
-  const clinics = await trx('clinics').whereIn('id', [...new Set(rows.map((r) => r.clinic_id))]).select('id', 'name');
-  const cmap = Object.fromEntries(clinics.map((c) => [c.id, c]));
-  return rows.map((r) => serialize(r, { patient: pmap[r.patient_id], clinic: cmap[r.clinic_id] }));
+  const pmap = await patients.refsFor(db, rows.map((r) => r.patientId));
+  const clinics = await db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId))] } }, { projection: { name: 1 } });
+  const cmap = Object.fromEntries(clinics.map((c) => [c._id, c]));
+  return rows.map((r) => serialize(r, { patient: pmap[r.patientId], clinic: cmap[r.clinicId] }));
 }
-
 async function list(scope, { patientId, from, to, clinicId, limit = 100, offset = 0, page = 1 }) {
-  return withTenant(scope, async (trx) => {
-    let q = repo.scoped(trx, scope);
-    if (clinicId && scope.role === ROLES.SUPER_MASTER_ADMIN) q = q.where('clinic_id', clinicId);
-    if (patientId) q = q.where('patient_id', patientId);
-    if (from) q = q.where('recorded_at', '>=', from);
-    if (to) q = q.where('recorded_at', '<=', to);
-    const total = Number((await q.clone().count({ c: '*' }))[0].c);
-    const rows = await q.orderBy('recorded_at', 'desc').limit(limit).offset(offset);
-    return { data: await hydrate(trx, rows), total, page, limit };
-  }, getKnex());
+  return withTenant(scope, async (db) => {
+    const filter = {};
+    if (clinicId && scope.role === ROLES.SUPER_MASTER_ADMIN) filter.clinicId = clinicId;
+    if (patientId) filter.patientId = patientId;
+    if (from || to) filter.recordedAt = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
+    const col = db.c('vitals');
+    const [rows, total] = await Promise.all([col.find(filter, { sort: { recordedAt: -1 }, limit, skip: offset }), col.count(filter)]);
+    return { data: await hydrate(db, rows), total, page, limit };
+  });
 }
-
 async function getById(scope, id, ctx) {
-  return withTenant(scope, async (trx) => {
-    const row = await repo.findById(trx, scope, id);
+  return withTenant(scope, async (db) => {
+    const row = await db.c('vitals').findById(id);
     if (!row) throw notFound('Vitals record');
-    await auditInTrx(trx, scope, { action: 'MEDICAL_RECORD_VIEWED', resourceType: 'vitals', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
-    const [v] = await hydrate(trx, [row]);
-    return v;
-  }, getKnex());
+    await auditInTrx(db, scope, { action: 'MEDICAL_RECORD_VIEWED', resourceType: 'vitals', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
+    return (await hydrate(db, [row]))[0];
+  });
 }
-
 async function create(scope, input, ctx) {
-  const row = toRow(input);
-  if (!row.patient_id) throw badRequest('patientId is required', 'VALIDATION_ERROR');
-  return withTenant(scope, async (trx) => {
-    const patient = await patients.assertPatient(trx, scope, row.patient_id);
-    if (row.encounter_id) await encounters.assertEncounter(trx, scope, row.encounter_id);
-    const [created] = await trx('vitals').insert({ ...row, clinic_id: patient.clinic_id, recorded_at: row.recorded_at || new Date(), created_by: scope.userId, updated_by: scope.userId }).returning('*');
-    await auditInTrx(trx, { ...scope, clinicId: patient.clinic_id }, { action: 'VITALS_RECORDED', resourceType: 'vitals', resourceId: created.id, requestId: ctx.requestId, ip: ctx.ip });
-    await enqueueEvent(trx, { type: 'vitals.recorded', aggregateType: 'vitals', aggregateId: created.id, clinicId: patient.clinic_id, actorId: scope.userId, payload: { patientId: patient.id } });
-    const [v] = await hydrate(trx, [created]);
-    return v;
-  }, getKnex());
+  const d = toDoc(input);
+  if (!d.patientId) throw badRequest('patientId is required', 'VALIDATION_ERROR');
+  return withTenant(scope, async (db) => {
+    const patient = await patients.assertPatient(db, scope, d.patientId);
+    if (d.encounterId) await encounters.assertEncounter(db, scope, d.encounterId);
+    const created = await db.c('vitals').insertOne({ temperatureUnit: '°F', clinicalNotes: {}, encounterId: null, recordedBy: null, ...d, clinicId: patient.clinicId, recordedAt: d.recordedAt || new Date() });
+    await auditInTrx(db, { ...scope, clinicId: patient.clinicId }, { action: 'VITALS_RECORDED', resourceType: 'vitals', resourceId: created._id, requestId: ctx.requestId, ip: ctx.ip });
+    await enqueueEvent(db, { type: 'vitals.recorded', aggregateType: 'vitals', aggregateId: created._id, clinicId: patient.clinicId, actorId: scope.userId, payload: { patientId: patient._id } });
+    return (await hydrate(db, [created]))[0];
+  });
 }
-
 async function update(scope, id, input, ctx) {
-  const row = toRow(input);
-  delete row.patient_id;
-  return withTenant(scope, async (trx) => {
-    const current = await repo.findById(trx, scope, id);
-    if (!current) throw notFound('Vitals record');
-    const updated = await repo.update(trx, scope, id, row);
-    await auditInTrx(trx, scope, { action: 'MEDICAL_RECORD_UPDATED', resourceType: 'vitals', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
-    const [v] = await hydrate(trx, [updated]);
-    return v;
-  }, getKnex());
+  const d = toDoc(input);
+  delete d.patientId;
+  return withTenant(scope, async (db) => {
+    const updated = await db.c('vitals').updateOne({ _id: id }, d);
+    if (!updated) throw notFound('Vitals record');
+    await auditInTrx(db, scope, { action: 'MEDICAL_RECORD_UPDATED', resourceType: 'vitals', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
+    return (await hydrate(db, [updated]))[0];
+  });
 }
-
 async function remove(scope, id, ctx) {
-  return withTenant(scope, async (trx) => {
-    const current = await repo.findById(trx, scope, id);
-    if (!current) throw notFound('Vitals record');
-    await repo.remove(trx, scope, id);
-    await auditInTrx(trx, scope, { action: 'VITALS_DELETED', resourceType: 'vitals', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
+  return withTenant(scope, async (db) => {
+    const n = await db.c('vitals').softDelete({ _id: id });
+    if (!n) throw notFound('Vitals record');
+    await auditInTrx(db, scope, { action: 'VITALS_DELETED', resourceType: 'vitals', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
     return true;
-  }, getKnex());
+  });
 }
-
-module.exports = { list, getById, create, update, remove, repo };
+module.exports = { list, getById, create, update, remove };

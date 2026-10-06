@@ -1,6 +1,5 @@
 'use strict';
-const { api, resetData, adminToken, createClinic, createPatient } = require('../helpers/api');
-const { getKnex } = require('../../src/infrastructure/postgres/knex');
+const { api, raw, resetData, adminToken, createClinic, createPatient } = require('../helpers/api');
 const { publishBatch } = require('../../src/workers/outboxPublisher');
 const { housekeeping } = require('../../src/workers/schedulers');
 const { withLock } = require('../../src/infrastructure/redis/lock');
@@ -12,16 +11,16 @@ describe('outbox, locks, notifications and housekeeping', () => {
 
   it('domain writes enqueue outbox events in the same transaction', async () => {
     const p = await createPatient(c.adminToken);
-    const rows = await getKnex()('outbox_events').where({ aggregate_id: p._id });
-    expect(rows.map((r) => r.event_type)).toContain('patient.created');
-    expect(rows[0].clinic_id).toBe(c.clinic._id);
-    expect(rows[0].published_at).toBeNull();
+    const rows = await raw('outbox_events').find({ aggregateId: p._id }).toArray();
+    expect(rows.map((r) => r.eventType)).toContain('patient.created');
+    expect(rows[0].clinicId).toBe(c.clinic._id);
+    expect(rows[0].publishedAt).toBeNull();
   });
 
   it('publisher leaves events in the outbox when no broker is configured', async () => {
     const n = await publishBatch();
     expect(n).toBe(0);
-    expect(Number((await getKnex()('outbox_events').whereNull('published_at').count({ c: '*' }))[0].c)).toBeGreaterThan(0);
+    expect(await raw('outbox_events').countDocuments({ publishedAt: null })).toBeGreaterThan(0);
   });
 
   it('distributed lock rejects concurrent holders', async () => {

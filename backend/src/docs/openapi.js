@@ -12,7 +12,7 @@ const resources = [
 const paths = {
   '/health': { get: { tags: ['Health'], summary: 'Overall health with dependency checks', security: [], responses: { 200: { description: 'ok' }, 503: { description: 'degraded' } } } },
   '/health/live': { get: { tags: ['Health'], summary: 'Liveness', security: [], responses: { 200: { description: 'alive' } } } },
-  '/health/ready': { get: { tags: ['Health'], summary: 'Readiness (PostgreSQL, MongoDB, Redis, RabbitMQ)', security: [], responses: { 200: { description: 'ready' }, 503: { description: 'not ready' } } } },
+  '/health/ready': { get: { tags: ['Health'], summary: 'Readiness (MongoDB, Redis, RabbitMQ)', security: [], responses: { 200: { description: 'ready' }, 503: { description: 'not ready' } } } },
   '/api/v1/auth/login': { post: { tags: ['Auth'], summary: 'Password login (development only; production requires OTP)', security: [], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['email', 'password'], properties: { email: { type: 'string' }, password: { type: 'string' } } } } } }, responses: { 200: { description: 'access token + refresh cookie' }, 401: { description: 'invalid credentials' } } } },
   '/api/v1/auth/clinic-login': { post: { tags: ['Auth'], summary: 'Clinic admin login', security: [], responses: { 200: { description: 'token + clinic' } } } },
   '/api/v1/auth/request-login-otp': { post: { tags: ['Auth'], summary: 'Step 1 of OTP login', security: [], responses: { 200: { description: 'userId' } } } },

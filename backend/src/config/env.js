@@ -29,13 +29,10 @@ const schema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     TRUST_PROXY: bool.default(false),
 
-    DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-    DATABASE_POOL_MIN: z.coerce.number().int().min(0).default(2),
-    DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
-    DATABASE_SSL: bool.default(false),
-
-    MONGODB_URI: z.string().optional(),
-    MONGODB_REQUIRED: bool.default(false),
+    MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
+    MONGODB_DB_NAME: z.string().optional(),
+    MONGODB_POOL_MIN: z.coerce.number().int().min(0).default(2),
+    MONGODB_POOL_MAX: z.coerce.number().int().min(1).default(20),
 
     REDIS_URL: z.string().optional(),
     REDIS_REQUIRED: bool.default(false),
@@ -96,9 +93,6 @@ const schema = z
       }
       if (env.STORAGE_PROVIDER !== 'cloudinary') {
         ctx.addIssue({ code: 'custom', path: ['STORAGE_PROVIDER'], message: 'Production must use Cloudinary storage' });
-      }
-      if (!env.MONGODB_URI) {
-        ctx.addIssue({ code: 'custom', path: ['MONGODB_URI'], message: 'MONGODB_URI is required in production' });
       }
       if (!env.REDIS_URL) {
         ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'REDIS_URL is required in production' });

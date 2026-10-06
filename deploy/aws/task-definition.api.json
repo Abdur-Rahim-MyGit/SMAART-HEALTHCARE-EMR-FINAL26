@@ -20,7 +20,6 @@
         { "name": "EMAIL_TRANSPORT", "value": "smtp" }
       ],
       "secrets": [
-        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/DATABASE_URL" },
         { "name": "MONGODB_URI", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/MONGODB_URI" },
         { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/REDIS_URL" },
         { "name": "RABBITMQ_URL", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smaart/RABBITMQ_URL" },

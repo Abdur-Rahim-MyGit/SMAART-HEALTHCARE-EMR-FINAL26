@@ -11,7 +11,6 @@ const outboxPending = new client.Gauge({ name: 'smaart_outbox_pending', help: 'U
 const outboxPublished = new client.Counter({ name: 'smaart_outbox_published_total', help: 'Outbox events published', registers: [registry] });
 const workerFailures = new client.Counter({ name: 'smaart_worker_failures_total', help: 'Worker handler failures', labelNames: ['queue'], registers: [registry] });
 const dlqDepth = new client.Gauge({ name: 'smaart_rabbitmq_dlq_depth', help: 'Messages in the dead-letter queue', registers: [registry] });
-const dbPool = new client.Gauge({ name: 'smaart_db_pool', help: 'PostgreSQL pool state', labelNames: ['state'], registers: [registry] });
 
 function metricsMiddleware(req, res, next) {
   const end = httpDuration.startTimer();
@@ -30,4 +29,4 @@ async function metricsHandler(_req, res) {
   res.end(await registry.metrics());
 }
 
-module.exports = { registry, metricsMiddleware, metricsHandler, outboxPending, outboxPublished, workerFailures, dlqDepth, dbPool, authFailures };
+module.exports = { registry, metricsMiddleware, metricsHandler, outboxPending, outboxPublished, workerFailures, dlqDepth, authFailures };

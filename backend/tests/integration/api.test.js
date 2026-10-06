@@ -15,7 +15,7 @@ describe('REST API behaviour', () => {
 
   it('health endpoints report dependencies', async () => {
     const h = await api().get('/health');
-    expect(h.body.checks.map((x) => x.name)).toEqual(['postgres', 'mongodb', 'redis', 'rabbitmq']);
+    expect(h.body.checks.map((x) => x.name)).toEqual(['mongodb', 'redis', 'rabbitmq']);
     expect((await api().get('/health/live')).status).toBe(200);
     expect([200, 503]).toContain((await api().get('/health/ready')).status);
     expect((await api().get('/metrics')).text).toContain('smaart_http_request_duration_seconds');

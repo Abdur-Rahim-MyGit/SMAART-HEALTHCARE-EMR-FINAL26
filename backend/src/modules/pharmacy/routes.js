@@ -6,30 +6,33 @@
  */
 const express = require('express');
 const { z } = require('zod');
-const { getKnex } = require('../../infrastructure/postgres/knex');
-const { withTenant } = require('../../infrastructure/postgres/tenant');
-const { BaseRepository } = require('../../infrastructure/postgres/BaseRepository');
+const { withTenant, resolveClinicId, contains } = require('../../infrastructure/mongodb/tenant');
 const { authorize } = require('../../common/middleware/authorize');
 const { tenantScope } = require('../../common/middleware/tenant');
 const { validate } = require('../../common/middleware/validate');
 const { asyncHandler } = require('../../common/middleware/asyncHandler');
-const { idParam, uuid, optionalString, likePattern } = require('../../common/validation/schemas');
-const { serializeRow, pickForDb } = require('../../common/utils/serialize');
+const { idParam, uuid, optionalString } = require('../../common/validation/schemas');
+const { serializeRow } = require('../../common/utils/serialize');
 const { notFound, badRequest } = require('../../common/errors/AppError');
 const { auditInTrx } = require('../audit/auditRepository');
 
-const repo = new BaseRepository('inventory_items');
 const router = express.Router();
 const ctxOf = (req) => ({ requestId: req.id, ip: req.ip });
 const FIELDS = ['name', 'genericName', 'category', 'form', 'strength', 'unit', 'stock', 'minStock', 'price', 'costPrice', 'supplier', 'manufacturer', 'batchNumber', 'expiryDate', 'location', 'description', 'isActive'];
 
+function pick(input) {
+  const d = {};
+  for (const k of FIELDS) if (input[k] !== undefined) d[k] = input[k];
+  if (d.expiryDate !== undefined) d.expiryDate = d.expiryDate ? new Date(d.expiryDate) : null;
+  return d;
+}
 function statusOf(r) {
-  if (r.expiry_date && new Date(r.expiry_date) < new Date()) return 'expired';
+  if (r.expiryDate && new Date(r.expiryDate) < new Date()) return 'expired';
   if (r.stock === 0) return 'outOfStock';
-  if (r.stock <= r.min_stock) return 'lowStock';
+  if (r.stock <= r.minStock) return 'lowStock';
   return 'inStock';
 }
-const serialize = (r) => ({ ...serializeRow(r), price: Number(r.price), costPrice: r.cost_price === null ? null : Number(r.cost_price), status: statusOf(r), value: Math.round(Number(r.price) * r.stock * 100) / 100 });
+const serialize = (r) => ({ ...serializeRow(r), price: Number(r.price), costPrice: r.costPrice === null || r.costPrice === undefined ? null : Number(r.costPrice), status: statusOf(r), value: Math.round(Number(r.price) * r.stock * 100) / 100 });
 function stats(rows) {
   const s = { total: rows.length, inStock: 0, lowStock: 0, outOfStock: 0, expired: 0, totalValue: 0 };
   for (const r of rows) { s[r.status] += 1; s.totalValue += r.value; }
@@ -41,16 +44,15 @@ const body = z.object({ name: z.string().trim().min(1).max(200).optional(), gene
 const listQuery = z.object({ search: z.string().max(100).optional(), status: z.enum(['inStock', 'lowStock', 'outOfStock', 'expired', '']).optional(), category: z.string().max(80).optional(), supplier: z.string().max(150).optional(), sortBy: z.enum(['name', 'stock', 'expiryDate', 'price', 'category']).default('name'), limit: z.coerce.number().int().min(1).max(1000).default(500) });
 
 async function listFor(scope, q) {
-  return withTenant(scope, async (trx) => {
-    let query = repo.scoped(trx, scope).where('is_active', true);
-    if (q.search) query = query.where((b) => b.whereILike('name', likePattern(q.search)).orWhereILike('category', likePattern(q.search)).orWhereILike('supplier', likePattern(q.search)));
-    if (q.category) query = query.whereILike('category', likePattern(q.category));
-    if (q.supplier) query = query.whereILike('supplier', likePattern(q.supplier));
-    const sort = { name: 'name', stock: 'stock', expiryDate: 'expiry_date', price: 'price', category: 'category' }[q.sortBy] || 'name';
-    const rows = (await query.orderBy(sort).limit(q.limit)).map(serialize);
+  return withTenant(scope, async (db) => {
+    const filter = { isActive: true };
+    if (q.search) filter.$or = [{ name: contains(q.search) }, { category: contains(q.search) }, { supplier: contains(q.search) }];
+    if (q.category) filter.category = contains(q.category);
+    if (q.supplier) filter.supplier = contains(q.supplier);
+    const rows = (await db.c('inventory_items').find(filter, { sort: { [q.sortBy || 'name']: 1 }, limit: q.limit })).map(serialize);
     const filtered = q.status ? rows.filter((r) => r.status === q.status) : rows;
     return { medications: filtered, stats: stats(rows) };
-  }, getKnex());
+  });
 }
 
 router.get('/clinic/:clinicId', authorize('settings:read'), tenantScope({ paramName: 'clinicId' }), validate({ query: listQuery }), asyncHandler(async (req, res) => {
@@ -71,51 +73,49 @@ router.get('/clinic/:clinicId/expiring', authorize('settings:read'), tenantScope
   res.json({ success: true, medications: r.medications.filter((m) => m.expiryDate && new Date(m.expiryDate) <= limit) });
 }));
 router.get('/:id', authorize('settings:read'), tenantScope(), validate({ params: idParam }), asyncHandler(async (req, res) => {
-  const row = await withTenant(req.scope, (trx) => repo.findById(trx, req.scope, req.params.id), getKnex());
+  const row = await withTenant(req.scope, (db) => db.c('inventory_items').findById(req.params.id));
   if (!row) throw notFound('Medication');
   res.json({ success: true, medication: serialize(row) });
 }));
 router.post('/', authorize('settings:write'), tenantScope(), validate({ body: body.extend({ name: z.string().trim().min(1).max(200) }) }), asyncHandler(async (req, res) => {
-  const clinicId = repo.resolveClinicId(req.scope, req.body.clinicId);
+  const clinicId = resolveClinicId(req.scope, req.body.clinicId);
   if (!clinicId) throw badRequest('clinicId is required', 'CLINIC_REQUIRED');
-  const row = await withTenant(req.scope, async (trx) => {
-    const data = pickForDb(req.body, FIELDS);
-    if (data.expiry_date === '') data.expiry_date = null;
-    const [r] = await trx('inventory_items').insert({ ...data, clinic_id: clinicId, created_by: req.scope.userId, updated_by: req.scope.userId }).returning('*');
-    await auditInTrx(trx, { ...req.scope, clinicId }, { action: 'INVENTORY_ITEM_CREATED', resourceType: 'inventory_item', resourceId: r.id, ...ctxOf(req) });
+  const row = await withTenant(req.scope, async (db) => {
+    const r = await db.c('inventory_items').insertOne({ genericName: null, category: null, form: null, strength: null, unit: null, stock: 0, minStock: 0, price: 0, costPrice: null, supplier: null, manufacturer: null, batchNumber: null, expiryDate: null, location: null, description: null, isActive: true, ...pick(req.body), clinicId });
+    await auditInTrx(db, { ...req.scope, clinicId }, { action: 'INVENTORY_ITEM_CREATED', resourceType: 'inventory_item', resourceId: r._id, ...ctxOf(req) });
     return r;
-  }, getKnex());
+  });
   res.status(201).json({ success: true, message: 'Medication added', medication: serialize(row) });
 }));
 router.put('/:id', authorize('settings:write'), tenantScope(), validate({ params: idParam, body }), asyncHandler(async (req, res) => {
-  const row = await withTenant(req.scope, async (trx) => {
-    const data = pickForDb(req.body, FIELDS);
-    if (data.expiry_date === '') data.expiry_date = null;
-    const r = await repo.update(trx, req.scope, req.params.id, data);
+  const row = await withTenant(req.scope, async (db) => {
+    const r = await db.c('inventory_items').updateOne({ _id: req.params.id }, pick(req.body));
     if (!r) throw notFound('Medication');
-    await auditInTrx(trx, req.scope, { action: 'INVENTORY_ITEM_UPDATED', resourceType: 'inventory_item', resourceId: r.id, ...ctxOf(req) });
+    await auditInTrx(db, req.scope, { action: 'INVENTORY_ITEM_UPDATED', resourceType: 'inventory_item', resourceId: r._id, ...ctxOf(req) });
     return r;
-  }, getKnex());
+  });
   res.json({ success: true, message: 'Medication updated', medication: serialize(row) });
 }));
 router.patch('/:id/stock', authorize('settings:write'), tenantScope(), validate({ params: idParam, body: z.object({ adjustment: z.coerce.number().int().optional(), stock: z.coerce.number().int().min(0).optional(), reason: optionalString(200) }) }), asyncHandler(async (req, res) => {
-  const row = await withTenant(req.scope, async (trx) => {
-    const current = await repo.findById(trx, req.scope, req.params.id);
+  const row = await withTenant(req.scope, async (db) => {
+    const col = db.c('inventory_items');
+    const current = await col.findById(req.params.id);
     if (!current) throw notFound('Medication');
     const stock = req.body.stock !== undefined ? req.body.stock : current.stock + (req.body.adjustment || 0);
     if (stock < 0) throw badRequest('Stock cannot go below zero', 'INVALID_STOCK');
-    const r = await repo.update(trx, req.scope, req.params.id, { stock });
-    await auditInTrx(trx, req.scope, { action: 'INVENTORY_STOCK_ADJUSTED', resourceType: 'inventory_item', resourceId: r.id, ...ctxOf(req), details: { from: current.stock, to: stock, reason: req.body.reason } });
+    const r = await col.updateOne({ _id: req.params.id }, { stock }, { expectedVersion: current.version });
+    if (!r) throw badRequest('Stock was modified concurrently, please retry', 'CONCURRENT_MODIFICATION');
+    await auditInTrx(db, req.scope, { action: 'INVENTORY_STOCK_ADJUSTED', resourceType: 'inventory_item', resourceId: r._id, ...ctxOf(req), details: { from: current.stock, to: stock, reason: req.body.reason } });
     return r;
-  }, getKnex());
+  });
   res.json({ success: true, medication: serialize(row) });
 }));
 router.delete('/:id', authorize('settings:write'), tenantScope(), validate({ params: idParam }), asyncHandler(async (req, res) => {
-  await withTenant(req.scope, async (trx) => {
-    const ok = await repo.remove(trx, req.scope, req.params.id);
-    if (!ok) throw notFound('Medication');
-    await auditInTrx(trx, req.scope, { action: 'INVENTORY_ITEM_DELETED', resourceType: 'inventory_item', resourceId: req.params.id, ...ctxOf(req) });
-  }, getKnex());
+  await withTenant(req.scope, async (db) => {
+    const n = await db.c('inventory_items').softDelete({ _id: req.params.id });
+    if (!n) throw notFound('Medication');
+    await auditInTrx(db, req.scope, { action: 'INVENTORY_ITEM_DELETED', resourceType: 'inventory_item', resourceId: req.params.id, ...ctxOf(req) });
+  });
   res.json({ success: true, message: 'Medication removed' });
 }));
 module.exports = router;

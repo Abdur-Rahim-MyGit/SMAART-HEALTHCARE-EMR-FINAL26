@@ -1,10 +1,9 @@
 'use strict';
 /**
- * Worker process: outbox publisher + RabbitMQ consumers. Run with `npm run worker`.
+ * Worker process: outbox publisher + RabbitMQ consumers + schedulers. Run with `npm run worker`.
  */
 const { config } = require('../config');
 const { getLogger } = require('../common/logging/logger');
-const { pingPostgres, closeKnex } = require('../infrastructure/postgres/knex');
 const { connectMongo, closeMongo } = require('../infrastructure/mongodb/connection');
 const { getRedis, closeRedis } = require('../infrastructure/redis/client');
 const { connectRabbit, closeRabbit, isRabbitConnected } = require('../infrastructure/rabbitmq/connection');
@@ -15,9 +14,8 @@ const { startSchedulers } = require('./schedulers');
 async function main() {
   const env = config();
   const log = getLogger().child({ process: 'worker' });
-  await pingPostgres();
+  await connectMongo();
   getRedis();
-  try { await connectMongo(); } catch (err) { if (env.isProduction) throw err; log.warn({ err }, 'mongodb unavailable'); }
   try { await connectRabbit(); } catch (err) { if (env.isProduction) throw err; log.warn({ err }, 'rabbitmq unavailable; publisher will retry'); }
   const stopPublisher = startOutboxPublisher();
   const stopSchedulers = startSchedulers();
@@ -26,7 +24,7 @@ async function main() {
   const shutdown = async () => {
     stopPublisher();
     stopSchedulers();
-    await Promise.allSettled([closeRabbit(), closeMongo(), closeRedis(), closeKnex()]);
+    await Promise.allSettled([closeRabbit(), closeRedis(), closeMongo()]);
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

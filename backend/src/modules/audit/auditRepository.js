@@ -1,40 +1,31 @@
 'use strict';
-const { getKnex } = require('../../infrastructure/postgres/knex');
-const { withTenant, withSystem } = require('../../infrastructure/postgres/tenant');
+const crypto = require('crypto');
+const { withTenant, withSystem, clinicFilter } = require('../../infrastructure/mongodb/tenant');
+
+const record = (r) => ({ _id: crypto.randomUUID(), occurredAt: new Date(), userId: r.user_id ?? r.userId ?? null, role: r.role ?? null, clinicId: r.clinic_id ?? r.clinicId ?? null, action: r.action, resourceType: r.resource_type ?? r.resourceType ?? null, resourceId: r.resource_id ?? r.resourceId ?? null, ip: r.ip ?? null, userAgent: r.user_agent ?? r.userAgent ?? null, requestId: r.request_id ?? r.requestId ?? null, result: r.result ?? null, details: typeof r.details === 'string' ? JSON.parse(r.details || '{}') : r.details || {} });
 
 /** Append-only writer. Runs as system so denied requests are still recorded. */
-async function writeAudit(record) {
-  return withSystem((trx) => trx('audit_logs').insert(record), getKnex());
+async function writeAudit(r) {
+  return withSystem((db) => db.raw('audit_logs').insertOne(record(r)));
 }
 
-/** Convenience for services: record an action inside the current transaction. */
-async function auditInTrx(trx, scope, { action, resourceType, resourceId, result = 'SUCCESS', details = {}, requestId, ip }) {
-  await trx('audit_logs').insert({
-    user_id: scope.userId || null,
-    role: scope.role || null,
-    clinic_id: scope.clinicId || null,
-    action,
-    resource_type: resourceType || null,
-    resource_id: resourceId ? String(resourceId) : null,
-    result,
-    request_id: requestId || null,
-    ip: ip || null,
-    details: JSON.stringify(details),
-  });
+/** Record an action inside the current unit of work. */
+async function auditInTrx(db, scope, { action, resourceType, resourceId, result = 'SUCCESS', details = {}, requestId, ip }) {
+  await db.c('audit_logs').col.insertOne(record({ userId: scope.userId, role: scope.role, clinicId: scope.clinicId, action, resourceType, resourceId: resourceId ? String(resourceId) : null, result, requestId, ip, details }), { session: db.session });
 }
 
 async function listAudit(scope, { page, limit, offset, action, resourceType, userId, from, to }) {
-  return withTenant(scope, async (trx) => {
-    let q = trx('audit_logs');
-    if (scope.clinicId) q = q.where('clinic_id', scope.clinicId);
-    if (action) q = q.where('action', action);
-    if (resourceType) q = q.where('resource_type', resourceType);
-    if (userId) q = q.where('user_id', userId);
-    if (from) q = q.where('occurred_at', '>=', from);
-    if (to) q = q.where('occurred_at', '<=', to);
-    const [{ count }] = await q.clone().count({ count: '*' });
-    const rows = await q.orderBy('occurred_at', 'desc').limit(limit).offset(offset);
-    return { rows, total: Number(count), page, limit };
+  return withTenant(scope, async (db) => {
+    const filter = {};
+    const clinicId = clinicFilter(scope);
+    if (clinicId) filter.clinicId = clinicId;
+    if (action) filter.action = action;
+    if (resourceType) filter.resourceType = resourceType;
+    if (userId) filter.userId = userId;
+    if (from || to) filter.occurredAt = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
+    const col = db.c('audit_logs');
+    const [rows, total] = await Promise.all([col.find(filter, { sort: { occurredAt: -1 }, limit, skip: offset }), col.count(filter)]);
+    return { rows, total, page, limit };
   });
 }
 

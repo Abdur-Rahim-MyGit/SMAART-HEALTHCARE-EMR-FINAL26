@@ -1,27 +1,18 @@
 'use strict';
-/**
- * MongoDB-backed modules (community hub, clinical notes). Runs only when MONGODB_URI
- * is set (CI provides a mongo service); skipped locally when no MongoDB is available.
- */
+/** Flexible clinical documents (community hub, clinical notes): clinic scoped, audited, injection safe. */
 const { api, resetData, adminToken, createClinic, createPatient } = require('../helpers/api');
-const { connectMongo, closeMongo, isMongoConfigured } = require('../../src/infrastructure/mongodb/connection');
 
-const run = isMongoConfigured() ? describe : describe.skip;
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
 
-run('mongodb modules', () => {
+describe('flexible document modules', () => {
   let t, a, b, pa;
   beforeAll(async () => {
-    await connectMongo();
-    const models = require('../../src/infrastructure/mongodb/models');
-    await Promise.all([models.CommunityPost.deleteMany({}), models.ClinicalNote.deleteMany({})]);
     await resetData();
     t = await adminToken();
     a = await createClinic(t);
     b = await createClinic(t);
     pa = await createPatient(a.adminToken);
   });
-  afterAll(async () => { await closeMongo(); });
 
   it('community posts are clinic scoped and author-owned', async () => {
     const post = await api().post('/api/v1/posts').set(auth(a.adminToken)).send({ title: 'Hello', content: 'World', category: 'General' });

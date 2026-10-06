@@ -1,12 +1,10 @@
 'use strict';
-/** Migration test: a legacy-shaped fixture (Mongo documents) is planned, applied twice (idempotent) and validated. */
+/** Migration test: a legacy-shaped fixture (mongoose-era documents) is planned, applied twice (idempotent) and validated. */
 const bcrypt = require('bcryptjs');
-const { resetData, api, login } = require('../helpers/api');
+const { resetData, api, login, raw } = require('../helpers/api');
 const { runMigration, uuidFor } = require('../../src/tools/migrate-legacy-data/run');
-const { getKnex } = require('../../src/infrastructure/postgres/knex');
-const { withSystem } = require('../../src/infrastructure/postgres/tenant');
-const count = (t) => withSystem(async (trx) => Number((await trx(t).count({ c: '*' }))[0].c), getKnex());
-const one = (t, where) => withSystem((trx) => trx(t).where(where).first(), getKnex());
+const count = (t) => raw(t).countDocuments({});
+const one = (t, where) => raw(t).findOne(where);
 
 const oid = (n) => n.toString(16).padStart(24, '0');
 function fixture() {
@@ -57,7 +55,9 @@ describe('legacy data migration', () => {
     expect(report.plan.lab_orders).toBe(2);
     expect(report.plan.documents).toBe(2);
     expect(report.plan.invoices).toBe(2);
-    expect(report.mongo).toEqual({ clinicalNotes: 1, communityPosts: 1, activityLogs: 2 });
+    expect(report.plan.clinical_notes).toBe(1);
+    expect(report.plan.community_posts).toBe(1);
+    expect(report.plan.patient_activity_logs).toBe(2);
     expect(report.warnings.join('\n')).toMatch(/plaintext/);
     expect(report.warnings.join('\n')).toMatch(/legacy role nurse removed/);
     expect(report.warnings.join('\n')).toMatch(/Orphan: unknown clinic/);
@@ -67,10 +67,10 @@ describe('legacy data migration', () => {
   });
 
   it('applies idempotently, validates, and the migrated data is usable through the API', async () => {
-    const first = await runMigration(fixture(), { apply: true, writeMongo: false });
+    const first = await runMigration(fixture(), { apply: true });
     expect(first.report.validation.failures).toEqual([]);
     expect(first.report.ok).toBe(true);
-    const second = await runMigration(fixture(), { apply: true, writeMongo: false });
+    const second = await runMigration(fixture(), { apply: true });
     expect(second.report.ok).toBe(true);
     expect(await count('patients')).toBe(2);
     expect(await count('legacy_id_map')).toBeGreaterThan(10);
@@ -78,7 +78,7 @@ describe('legacy data migration', () => {
     // legacy bcrypt clinic admin can log in and is transparently re-hashed
     const b = await login('adminb@legacy.local', 'Bcrypt12345', true);
     expect(b.user.role).toBe('clinic_admin');
-    const hash = (await one('users', { email: 'adminb@legacy.local' })).password_hash;
+    const hash = (await one('users', { email: 'adminb@legacy.local' })).passwordHash;
     expect(hash.startsWith('$argon2id$')).toBe(true);
     // plaintext clinic admin password was hashed and still works
     const a = await login('admina@legacy.local', 'plain-text-123', true);
@@ -100,5 +100,9 @@ describe('legacy data migration', () => {
     expect(inv.body.data.map((i) => i.invoiceNumber).sort()).toEqual(['BILL-1', 'INV-OLD-1']);
     const fhir = await api().get(`/api/fhir/R4/Patient/${patientId}`).set('Authorization', `Bearer ${a.token}`);
     expect(fhir.body.identifier.some((i) => i.value === 'UH-A-1')).toBe(true);
+    // flexible documents were migrated into the same database
+    const posts = await api().get('/api/v1/posts').set('Authorization', `Bearer ${a.token}`);
+    expect(posts.body.posts.map((x) => x.title)).toEqual(['Hello']);
+    expect((await api().get(`/api/v1/clinical-notes/patient/${patientId}`).set('Authorization', `Bearer ${a.token}`)).body.count).toBe(1);
   });
 });
