@@ -2560,6 +2560,8 @@ const PatientProfileTab = ({
                         ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400"
                         : appointment.status?.toLowerCase() === "cancelled"
                         ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400"
+                        : appointment.status?.toLowerCase() === "no show"
+                        ? "bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300"
                         : "bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 dark:text-gray-200 dark:text-gray-200"
                     }`}
                   >

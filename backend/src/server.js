@@ -34,6 +34,9 @@ async function start() {
   await new Promise((resolve) => server.listen(env.PORT, resolve));
   log.info({ port: env.PORT, env: env.NODE_ENV }, 'SMAART EMR API listening');
 
+  // Scheduled/Confirmed appointments become No Show 10 min after their slot time.
+  require('./jobs/noShowSweep').startNoShowSweep();
+
   if (!env.isProduction) {
     const divider = '='.repeat(54);
     console.log(`\n\x1b[32m${divider}\x1b[0m`);
