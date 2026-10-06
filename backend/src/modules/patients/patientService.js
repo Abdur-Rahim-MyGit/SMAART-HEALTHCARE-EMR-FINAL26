@@ -88,7 +88,37 @@ async function hydrate(trx, rows) {
   const imap = {};
   for (const i of ids) (imap[i.patient_id] = imap[i.patient_id] || []).push(i);
   const urls = await documents.urlsForIds(trx, rows.map((r) => r.profile_document_id));
-  return rows.map((r) => serializePatient(r, { clinic: cmap[r.clinic_id], identifiers: imap[r.id] || [], profileUrl: urls[r.profile_document_id] }));
+  const doctorsByPatient = await doctorsFromAppointments(trx, rows.map((r) => r.id));
+  return rows.map((r) => serializePatient(r, { clinic: cmap[r.clinic_id], identifiers: imap[r.id] || [], profileUrl: urls[r.profile_document_id], assignedDoctors: doctorsByPatient[r.id] || [] }));
+}
+
+/**
+ * The doctor(s) treating each patient, taken from their appointments (newest
+ * first; cancelled and no-show ones skipped). Patients carry no doctor of their
+ * own in this schema, so this is what the list's "Doctor:" line shows.
+ */
+async function doctorsFromAppointments(trx, patientIds) {
+  const ids = [...new Set(patientIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const appts = await trx('appointments')
+    .whereIn('patient_id', ids)
+    .whereNotNull('practitioner_id')
+    .whereNull('deleted_at')
+    .whereNotIn('status', ['Cancelled', 'No Show'])
+    .select('patient_id', 'practitioner_id', 'scheduled_at')
+    .orderBy('scheduled_at', 'desc');
+  if (!appts.length) return {};
+  const practIds = [...new Set(appts.map((a) => a.practitioner_id))];
+  const practs = await trx('practitioners').whereIn('id', practIds).select('id', 'full_name', 'specialty', 'kind');
+  const pmap = Object.fromEntries(practs.map((d) => [d.id, ref(d.id, { fullName: d.full_name, name: d.full_name, specialty: d.specialty, role: d.kind })]));
+  const out = {};
+  for (const a of appts) {
+    const doc = pmap[a.practitioner_id];
+    if (!doc) continue;
+    const list = (out[a.patient_id] = out[a.patient_id] || []);
+    if (!list.some((d) => d.id === doc.id)) list.push(doc);
+  }
+  return out;
 }
 
 async function saveProfileImage(trx, scope, patientRow, dataUrl, ctx) {
