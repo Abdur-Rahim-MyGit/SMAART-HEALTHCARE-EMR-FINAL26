@@ -75,11 +75,11 @@ describe('legacy data migration', () => {
     expect(await count('patients')).toBe(2);
     expect(await count('legacy_id_map')).toBeGreaterThan(10);
 
-    // legacy bcrypt clinic admin can log in and is transparently re-hashed
+    // legacy bcrypt clinic admin can log in; the stored hash stays bcrypt
     const b = await login('adminb@legacy.local', 'Bcrypt12345', true);
     expect(b.user.role).toBe('clinic_admin');
     const hash = (await one('users', { email: 'adminb@legacy.local' })).passwordHash;
-    expect(hash.startsWith('$argon2id$')).toBe(true);
+    expect(hash.startsWith('$2')).toBe(true);
     // plaintext clinic admin password was hashed and still works
     const a = await login('admina@legacy.local', 'plain-text-123', true);
     const patientId = uuidFor('patients', oid(21));

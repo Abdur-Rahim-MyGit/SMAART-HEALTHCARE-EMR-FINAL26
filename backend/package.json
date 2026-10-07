@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "amqplib": "^0.10.4",
-    "argon2": "^0.41.1",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.5.1",
     "cookie-parser": "^1.4.7",
@@ -53,5 +52,8 @@
     "nodemon": "^3.1.9",
     "supertest": "^7.0.0",
     "vitest": "^2.1.8"
+  },
+  "optionalDependencies": {
+    "argon2": "^0.41.1"
   }
 }
