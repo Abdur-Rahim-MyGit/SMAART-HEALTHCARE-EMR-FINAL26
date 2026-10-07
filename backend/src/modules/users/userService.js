@@ -1,6 +1,7 @@
 'use strict';
 const { withTenant, clinicFilter } = require('../../infrastructure/mongodb/tenant');
 const { ROLES } = require('../../common/security/rbac');
+const { cacheDel } = require('../../infrastructure/redis/cache');
 const { hashPassword, validatePasswordStrength } = require('../../common/security/password');
 const { notFound, forbidden, badRequest, conflict } = require('../../common/errors/AppError');
 const { ref } = require('../../common/utils/serialize');
@@ -69,6 +70,21 @@ async function update(scope, id, input, ctx) {
       }
     }
     const row = await db.c('users').updateOne({ _id: id }, patch);
+    /* The clinic record carries its own copy of the admin's name, phone, email and username
+     * (adminName, adminContact, adminEmail, adminUsername): the clinic list and the consultant app
+     * read it from there. Editing the admin through Settings or the Users page used to update only
+     * the users document, so the clinic kept showing the old admin details. Keep both in step. */
+    if (target.role === ROLES.CLINIC_ADMIN && target.clinicId) {
+      const mirror = {};
+      if (patch.fullName !== undefined) mirror.adminName = patch.fullName;
+      if (patch.phone !== undefined) mirror.adminContact = patch.phone;
+      if (patch.email !== undefined) mirror.adminEmail = patch.email;
+      if (patch.username !== undefined) mirror.adminUsername = patch.username;
+      if (Object.keys(mirror).length) {
+        await db.c('clinics').updateOne({ _id: target.clinicId }, mirror);
+        await cacheDel(`clinic:${target.clinicId}`);
+      }
+    }
     if (patch.isActive === false || patch.passwordHash) await revokeSessionsFor(db, { userId: id, reason: patch.isActive === false ? 'deactivated' : 'password_reset_by_admin' });
     await auditInTrx(db, scope, { action: 'USER_UPDATED', resourceType: 'user', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(patch) } });
     return (await hydrate(db, [row]))[0];

@@ -1,4 +1,5 @@
 'use strict';
+const { ObjectId } = require('mongodb');
 const { withTenant, contains } = require('../../infrastructure/mongodb/tenant');
 const { ROLES } = require('../../common/security/rbac');
 const { hashPassword, validatePasswordStrength } = require('../../common/security/password');
@@ -71,7 +72,11 @@ async function create(scope, input, ctx) {
     if (await db.c('users').exists({ email: adminEmail })) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
     // A blank admin name is not a reason to reject the clinic: fall back to the owner.
     const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
-    const clinic = await db.c('clinics').insertOne({ ...pick(input, FIELDS), name: input.name, adminName, adminEmail, adminUsername: input.adminUsername || null, clinicCode: input.clinicId || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
+    /* ObjectId, not a UUID string: the consultant app loads this same `clinics` collection through
+     * Mongoose with an ObjectId `_id`, stamps patients and appointments with it, and its login scope
+     * requires a valid ObjectId. A UUID-keyed clinic silently loses its id there and can neither log
+     * in nor be scoped. Every id helper here accepts ObjectId and its 24-hex string alike. */
+    const clinic = await db.c('clinics').insertOne({ _id: new ObjectId(), ...pick(input, FIELDS), name: input.name, adminName, adminEmail, adminUsername: input.adminUsername || null, clinicCode: input.clinicId || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
     const [firstName, ...rest] = adminName.split(' ');
     const admin = await db.c('users').insertOne({ clinicId: clinic._id, role: ROLES.CLINIC_ADMIN, email: adminEmail, passwordHash, firstName, lastName: rest.join(' ') || null, fullName: adminName, phone: input.adminContact || null, username: input.adminUsername || null, isActive: true, isVerified: true, lastLoginAt: null, failedLoginAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
     await auditInTrx(db, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic._id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin._id } });
