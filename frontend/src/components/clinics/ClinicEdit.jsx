@@ -6,14 +6,14 @@ import { toast } from "react-hot-toast";
 import "./Clinics.css";
 
 const specialtiesList = [
-  "Physio",
-  "Minds",
-  "Balance",
-  "Eyes",
-  "Repro X",
-  "Nutrition",
-  "Blood parameters",
-  "Pharmacy",
+  "physio",
+  "minds",
+  "balance",
+  "eyes",
+  "repro x",
+  "nutrition",
+  "blood parameters",
+  "pharmacy",
 ];
 const clinicTypes = ["Multi speciality", "Properitor clinic"];
 
@@ -43,8 +43,17 @@ const ClinicEdit = () => {
           
           // Map validity period data to form fields
           const validityPeriod = clinicData.validityPeriod || {};
+          const combinedServicesSpecialties = [
+            ...new Set(
+              [...(clinicData.specialties || []), ...(clinicData.services || [])]
+                .map((s) => String(s || "").toLowerCase().trim())
+                .filter(Boolean)
+            ),
+          ];
           const mappedForm = {
             ...clinicData,
+            specialties: combinedServicesSpecialties,
+            services: combinedServicesSpecialties,
             // Map validity period fields
             validityStartDate: validityPeriod.startDate ? 
               new Date(validityPeriod.startDate).toISOString().split('T')[0] : '',
@@ -145,6 +154,8 @@ const ClinicEdit = () => {
       errors.phone = "Phone Number must be exactly 10 digits";
     if (!form.email) errors.email = "Email Address is required";
     if (!form.ownerName) errors.ownerName = "Owner/Director Name is required";
+    if (!form.adminName || !String(form.adminName).trim())
+      errors.adminName = "Admin Name is required";
     if (!form.adminContact)
       errors.adminContact = "Admin Contact Number is required";
     else if (!/^\d{10}$/.test(form.adminContact))
@@ -224,6 +235,7 @@ const ClinicEdit = () => {
         // Ownership & Administration
         ownerName: form.ownerName,
         ownerMedicalId: form.ownerMedicalId,
+        adminName: String(form.adminName || "").trim(),
         adminContact: form.adminContact,
         adminEmail: form.adminEmail,
         adminUsername: form.adminUsername,
@@ -235,9 +247,21 @@ const ClinicEdit = () => {
         tanNumber: form.tanNumber || "",
         bankAccountNumber: form.bankAccountNumber || "",
 
-        // Services & Specialties
-        specialties: form.specialties || [],
-        services: form.services || [],
+        // Services & Specialties (save lowercase in both service and specialties)
+        specialties: [
+          ...new Set(
+            [...(form.specialties || []), ...(form.services || [])]
+              .map((s) => String(s || "").toLowerCase().trim())
+              .filter(Boolean)
+          ),
+        ],
+        services: [
+          ...new Set(
+            [...(form.specialties || []), ...(form.services || [])]
+              .map((s) => String(s || "").toLowerCase().trim())
+              .filter(Boolean)
+          ),
+        ],
         operatingHours: form.operatingHours || "",
         paymentMethods: form.paymentMethods || [],
         bankInfo: form.bankInfo || "",
@@ -553,6 +577,27 @@ const ClinicEdit = () => {
                 {formErrors.ownerName && (
                   <div className="text-red-500 text-xs mt-1">
                     {formErrors.ownerName}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium">
+                  Admin Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className={`w-full px-3 py-2 bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    formErrors.adminName ? "border-red-500" : ""
+                  }`}
+                  name="adminName"
+                  required
+                  maxLength="120"
+                  placeholder="Full name of the clinic admin"
+                  value={form.adminName || ""}
+                  onChange={handleChange}
+                />
+                {formErrors.adminName && (
+                  <div className="text-red-500 text-xs mt-1">
+                    {formErrors.adminName}
                   </div>
                 )}
               </div>
@@ -895,16 +940,53 @@ const ClinicEdit = () => {
                 Specialties Offered
               </label>
               <div className="flex flex-wrap gap-2 mt-1">
-                {specialtiesList.map((spec) => (
-                  <label key={spec} className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={form.specialties?.includes(spec) || false}
-                      onChange={() => handleArrayChange("specialties", spec)}
-                    />
-                    <span>{spec}</span>
-                  </label>
-                ))}
+                {specialtiesList.map((spec) => {
+                  const isChecked = [
+                    ...(form.specialties || []),
+                    ...(form.services || []),
+                  ].some(
+                    (s) =>
+                      String(s || "").toLowerCase().trim() === spec ||
+                      String(s || "").toLowerCase().replace(/[\s_]+/g, "") === spec.replace(/[\s_]+/g, "")
+                  );
+                  return (
+                    <label key={spec} className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!isChecked}
+                        onChange={() => {
+                          setForm((f) => {
+                            const current = [
+                              ...new Set(
+                                [...(f.specialties || []), ...(f.services || [])]
+                                  .map((s) => String(s || "").toLowerCase().trim())
+                                  .filter(Boolean)
+                              ),
+                            ];
+                            const exists = current.some(
+                              (s) =>
+                                s === spec ||
+                                s.replace(/[\s_]+/g, "") === spec.replace(/[\s_]+/g, "")
+                            );
+                            const updated = exists
+                              ? current.filter(
+                                  (s) =>
+                                    s !== spec &&
+                                    s.replace(/[\s_]+/g, "") !== spec.replace(/[\s_]+/g, "")
+                                )
+                              : [...current, spec];
+                            return {
+                              ...f,
+                              specialties: updated,
+                              services: updated,
+                            };
+                          });
+                        }}
+                      />
+                      <span>{spec}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

@@ -44,6 +44,8 @@ import {
   labReportsAPI,
   medicalImagesAPI,
 } from "../../services/api";
+import { painSummary } from "../../utils/painAreas";
+import { appointmentModeLabel } from "../../utils/appointmentMode";
 
 const PatientView = () => {
   // ============================================================================
@@ -331,17 +333,17 @@ const PatientView = () => {
         timelineEntries.push({
           id: `appointment-${appointment._id}`,
           type: "appointment",
-          title: `${appointment.appointmentType || "Appointment"} Scheduled`,
+          title: `${appointmentModeLabel(appointment)} Appointment Scheduled`,
           description: `Appointment with ${
             appointment.doctorId?.fullName || "Doctor"
-          }`,
+          }${painSummary(appointment) ? ` • ${painSummary(appointment)}` : ""}`,
           performedBy: appointment.doctorId?.fullName
             ? `Dr. ${appointment.doctorId.fullName || ""}`
             : "Doctor",
           timestamp: appointment.appointmentDate || appointment.createdAt,
           details: {
             time: appointment.time,
-            type: appointment.appointmentType,
+            type: appointmentModeLabel(appointment),
             status: appointment.status,
             notes: appointment.notes,
           },
@@ -2523,7 +2525,7 @@ const PatientProfileTab = ({
                 <div className="flex justify-between items-start">
                   <div>
                     <h4 className="font-medium text-gray-900 dark:text-white dark:text-white">
-                      {appointment.appointmentType || "General Consultation"}
+                      {appointmentModeLabel(appointment)} Appointment
                     </h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Doctor:{" "}
@@ -2537,6 +2539,16 @@ const PatientProfileTab = ({
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Time: {appointment.time || "N/A"}
                     </p>
+                    {painSummary(appointment) && (
+                      <p className="text-xs text-rose-700 dark:text-rose-400 mt-1">
+                        Pain: {painSummary(appointment)}
+                      </p>
+                    )}
+                    {appointment.reason && (
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                        Reason: {appointment.reason}
+                      </p>
+                    )}
                   </div>
                   <span
                     className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
@@ -2548,6 +2560,8 @@ const PatientProfileTab = ({
                         ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400"
                         : appointment.status?.toLowerCase() === "cancelled"
                         ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400"
+                        : appointment.status?.toLowerCase() === "no show"
+                        ? "bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300"
                         : "bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 dark:text-gray-200 dark:text-gray-200"
                     }`}
                   >

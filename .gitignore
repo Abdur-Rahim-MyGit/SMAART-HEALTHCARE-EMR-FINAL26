@@ -1,2 +1,12 @@
-# Ignore all node_modules folders
 node_modules/
+.env
+.env.*
+!.env.example
+dist/
+coverage/
+/storage/
+/backend/storage/
+.test-storage/
+*.log
+.DS_Store
+dump.rdb

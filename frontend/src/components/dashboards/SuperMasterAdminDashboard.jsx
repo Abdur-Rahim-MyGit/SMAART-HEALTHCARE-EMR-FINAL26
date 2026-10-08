@@ -499,7 +499,7 @@ const SuperMasterAdminDashboard = () => {
         } else if (usersResponse.data.success) {
           // Fallback: get doctors from users API
           const users = usersResponse.data.users;
-          const doctors = users.filter(user => user.role === "doctor");
+          const doctors = []; // doctors are practitioners, not EMR users
           console.log("Fallback: Found doctors in users API:", doctors.length);
           console.log("Sample doctor from users:", doctors[0]);
           
@@ -645,7 +645,7 @@ const SuperMasterAdminDashboard = () => {
             // Final fallback to consultations
             console.log("🔄 Attempting final fallback to consultations...");
             try {
-              const consultationsResponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/consultations`, {
+              const consultationsResponse = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/consultations`, {
                 headers: {
                   'Authorization': `Bearer ${localStorage.getItem('token')}`,
                   'Content-Type': 'application/json'
@@ -681,7 +681,7 @@ const SuperMasterAdminDashboard = () => {
         
         // Additional direct count check for doctors to ensure accuracy
         try {
-          const directCountResponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/doctors?limit=1`, {
+          const directCountResponse = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/doctors?limit=1`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`,
               'Content-Type': 'application/json'
@@ -774,7 +774,6 @@ const SuperMasterAdminDashboard = () => {
           if (usersResponse.data.success) {
             const users = usersResponse.data.users;
             const usersCount = users.length;
-            const doctorsCount = users.filter(user => user.role === "doctor").length;
             const superMasterAdminsCount = users.filter(user => user.role === "super_master_admin").length;
 
             setAllUsers(users.filter(user => user.role === "super_master_admin"));
@@ -782,7 +781,7 @@ const SuperMasterAdminDashboard = () => {
               ...prev,
               totalUsers: usersCount,
               totalSuperMasterAdmins: superMasterAdminsCount,
-              totalDoctors: doctorsCount,
+              totalDoctors: prev.totalDoctors,
             }));
             setValue("totalUsers", usersCount);
             setValue("totalSuperMasterAdmins", superMasterAdminsCount);
@@ -792,7 +791,7 @@ const SuperMasterAdminDashboard = () => {
             
             // Additional direct count check in fallback
             try {
-              const directCountResponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/doctors?limit=1`, {
+              const directCountResponse = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/doctors?limit=1`, {
                 headers: {
                   'Authorization': `Bearer ${localStorage.getItem('token')}`,
                   'Content-Type': 'application/json'
@@ -1257,13 +1256,7 @@ const SuperMasterAdminDashboard = () => {
           console.log("Fetched doctors for modal:", Array.isArray(doctors) ? doctors.length : 0);
         } else {
           // Fallback to users API
-          const usersResponse = await usersAPI.getAll({ role: "doctor" });
-          if (usersResponse.data.success) {
-          setAllDoctors(
-              usersResponse.data.users.filter((user) => user.role === "doctor")
-          );
-            console.log("Fetched doctors from users API:", usersResponse.data.users.filter((user) => user.role === "doctor").length);
-          }
+          setAllDoctors([]);
         }
       } catch (error) {
         console.error("Error fetching doctors:", error);
@@ -2278,16 +2271,8 @@ const SuperMasterAdminDashboard = () => {
                               className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                                 user.role === "super_master_admin"
                                   ? "bg-purple-100 text-purple-800"
-                                  : user.role === "super_admin"
+                                  : user.role === "clinic_admin"
                                   ? "bg-blue-100 text-blue-800"
-                                  : user.role === "doctor"
-                                  ? "bg-green-100 text-green-800"
-                                  : user.role === "nurse"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : user.role === "billing_staff"
-                                  ? "bg-orange-100 text-orange-800"
-                                  : user.role === "pharmacy_staff"
-                                  ? "bg-pink-100 text-pink-800"
                                   : "bg-gray-100 text-gray-800"
                               }`}
                             >
@@ -2687,7 +2672,7 @@ const SuperMasterAdminDashboard = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex space-x-2">
                               <button
-                                onClick={() => window.open(`${process.env.REACT_APP_API_URL}/lab-reports/${report._id}/download`, '_blank')}
+                                onClick={() => window.open(`${import.meta.env.VITE_API_URL || '/api/v1'}/lab-reports/${report._id}/download`, '_blank')}
                                 className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                                 title="Download Report"
                               >

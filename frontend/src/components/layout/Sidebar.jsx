@@ -60,14 +60,6 @@ const Sidebar = ({ onClose }) => {
           { path: "/settings", label: "Settings", icon: Settings },
         ];
 
-      case "super_admin":
-        return [
-          ...baseItems,
-          { path: "/users", label: "Staff", icon: Users },
-          { path: "/patients", label: "Patients", icon: UserPlus },
-          { path: "/appointments", label: "Appointments", icon: Calendar },
-          { path: "/billing", label: "Billing", icon: CreditCard },
-        ];
 
       case "clinic_admin":
         return [
@@ -84,38 +76,10 @@ const Sidebar = ({ onClose }) => {
           { path: "/settings", label: "Settings", icon: Settings },
         ];
 
-      case "doctor":
-        return [
-          ...baseItems,
-          { path: "/appointments", label: "Appointments", icon: Calendar },
-          { path: "/patients", label: "Patients", icon: UserPlus },
-        ];
 
-      case "nurse":
-        return [
-          ...baseItems,
-          { path: "/appointments", label: "Appointments", icon: Calendar },
-          { path: "/patients", label: "Patients", icon: UserPlus },
-        ];
 
-      case "billing_staff":
-        return [
-          ...baseItems,
-          { path: "/billing", label: "Billing", icon: CreditCard },
-        ];
 
-      case "pharmacy_staff":
-        return [
-          ...baseItems,
-          { path: "/pharmacy", label: "Pharmacy", icon: Pill },
-        ];
 
-      case "patient":
-        return [
-          ...baseItems,
-          { path: "/appointments", label: "My Appointments", icon: Calendar },
-          { path: "/reports", label: "Medical Reports", icon: FileText },
-        ];
 
       default:
         return baseItems;

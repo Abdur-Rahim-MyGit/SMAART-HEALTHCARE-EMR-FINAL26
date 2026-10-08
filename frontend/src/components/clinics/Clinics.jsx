@@ -344,6 +344,8 @@ const Clinics = () => {
                     errors.email = "Invalid Email Address";
                   if (!form.ownerName)
                     errors.ownerName = "Owner/Director Name is required";
+                  if (!form.adminName || !form.adminName.trim())
+                    errors.adminName = "Admin Name is required";
                   if (!form.adminContact)
                     errors.adminContact = "Admin Contact Number is required";
                   else if (!/^\d{10}$/.test(form.adminContact))
@@ -356,9 +358,9 @@ const Clinics = () => {
                     errors.adminUsername = "Admin Username is required";
                   if (!form.adminPassword)
                     errors.adminPassword = "Admin Password is required";
-                  else if (form.adminPassword.length < 6)
+                  else if (form.adminPassword.length < 8)
                     errors.adminPassword =
-                      "Password must be at least 6 characters";
+                      "Password must be at least 8 characters";
 
                   // Legal & Compliance validation
                   if (form.gstNumber && form.gstNumber.length !== 15)
@@ -428,7 +430,7 @@ const Clinics = () => {
                     ownerMedicalId: form.ownerMedicalId || "",
 
                     // Admin info
-                    adminName: form.adminName || "",
+                    adminName: form.adminName.trim(),
                     adminContact: form.adminContact,
                     adminEmail: form.adminEmail,
                     adminUsername: form.adminUsername,
@@ -440,9 +442,21 @@ const Clinics = () => {
                     tanNumber: form.tanNumber || "",
                     bankAccountNumber: form.bankAccountNumber || "",
 
-                    // Services & specialties
-                    specialties: form.specialties || [],
-                    services: form.services || [],
+                    // Services & specialties (save lowercase in both service and specialties)
+                    specialties: [
+                      ...new Set(
+                        [...(form.specialties || []), ...(form.services || [])]
+                          .map((s) => String(s || "").toLowerCase().trim())
+                          .filter(Boolean)
+                      ),
+                    ],
+                    services: [
+                      ...new Set(
+                        [...(form.specialties || []), ...(form.services || [])]
+                          .map((s) => String(s || "").toLowerCase().trim())
+                          .filter(Boolean)
+                      ),
+                    ],
                     operatingHours: form.operatingHours || "",
 
                     // Infrastructure (convert to numbers)
@@ -885,6 +899,28 @@ const Clinics = () => {
                     {formErrors.ownerName && (
                       <div className="text-red-500 text-xs mt-1">
                         {formErrors.ownerName}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium">
+                      Admin Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      className={`form-input w-full ${
+                        formErrors.adminName ? "border-red-500" : ""
+                      }`}
+                      required
+                      value={form.adminName}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, adminName: e.target.value }))
+                      }
+                      placeholder="Full name of the clinic admin"
+                      maxLength="120"
+                    />
+                    {formErrors.adminName && (
+                      <div className="text-red-500 text-xs mt-1">
+                        {formErrors.adminName}
                       </div>
                     )}
                   </div>
@@ -1336,31 +1372,64 @@ const Clinics = () => {
                   </label>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {[
-                      "Physio",
-                      "Minds",
-                      "Balance",
-                      "Eyes",
-                      "ReproX",
-                      "Nutrition",
-                      "Blood parameters",
-                      "Pharmacy",
-                    ].map((service) => (
-                      <label key={service} className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={form.specialties.includes(service)}
-                          onChange={(e) =>
-                            setForm((f) => ({
-                              ...f,
-                              specialties: e.target.checked
-                                ? [...f.specialties, service]
-                                : f.specialties.filter((s) => s !== service),
-                            }))
-                          }
-                        />
-                        <span>{service}</span>
-                      </label>
-                    ))}
+                      "physio",
+                      "minds",
+                      "balance",
+                      "eyes",
+                      "repro x",
+                      "nutrition",
+                      "blood parameters",
+                      "pharmacy",
+                    ].map((service) => {
+                      const isSelected = [
+                        ...(form.specialties || []),
+                        ...(form.services || []),
+                      ].some(
+                        (s) =>
+                          String(s || "").toLowerCase().trim() === service ||
+                          String(s || "").toLowerCase().replace(/[\s_]+/g, "") === service.replace(/[\s_]+/g, "")
+                      );
+                      return (
+                        <label key={service} className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!isSelected}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setForm((f) => {
+                                const current = [
+                                  ...new Set(
+                                    [...(f.specialties || []), ...(f.services || [])]
+                                      .map((s) => String(s || "").toLowerCase().trim())
+                                      .filter(Boolean)
+                                  ),
+                                ];
+                                const exists = current.some(
+                                  (s) =>
+                                    s === service ||
+                                    s.replace(/[\s_]+/g, "") === service.replace(/[\s_]+/g, "")
+                                );
+                                const updated = isChecked
+                                  ? exists
+                                    ? current
+                                    : [...current, service]
+                                  : current.filter(
+                                      (s) =>
+                                        s !== service &&
+                                        s.replace(/[\s_]+/g, "") !== service.replace(/[\s_]+/g, "")
+                                    );
+                                return {
+                                  ...f,
+                                  specialties: updated,
+                                  services: updated,
+                                };
+                              });
+                            }}
+                          />
+                          <span>{service}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2112,9 +2181,12 @@ const Clinics = () => {
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          Admin Contact
+                          Admin
                         </label>
                         <p className="text-gray-900 dark:text-white font-semibold">
+                          {selectedClinic.adminName || 'N/A'}
+                        </p>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">
                           {selectedClinic.adminContact || 'N/A'}
                         </p>
                         <p className="text-gray-600 dark:text-gray-400 text-sm">

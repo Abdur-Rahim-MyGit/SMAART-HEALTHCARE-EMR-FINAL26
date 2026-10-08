@@ -22,6 +22,10 @@ import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "react-hot-toast";
 import { format, isToday, isTomorrow, isYesterday, parseISO } from "date-fns";
 
+import { painLocation, painSummary } from "../../utils/painAreas";
+import { appointmentModeLabel } from "../../utils/appointmentMode";
+
+
 const Appointments = () => {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
@@ -30,6 +34,8 @@ const Appointments = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  // Row click opens the details dialog.
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [sortBy, setSortBy] = useState("latest");
 
   // Enhanced search filters
@@ -99,8 +105,9 @@ const Appointments = () => {
 
     const stats = {
       total: appointmentsData.length,
-      scheduled: appointmentsData.filter((apt) => apt.status === "Pending")
-        .length,
+      scheduled: appointmentsData.filter(
+        (apt) => apt.status === "Pending" || apt.status === "Scheduled"
+      ).length,
       confirmed: appointmentsData.filter((apt) => apt.status === "Confirmed")
         .length,
       completed: appointmentsData.filter((apt) => apt.status === "Completed")
@@ -109,14 +116,20 @@ const Appointments = () => {
         (apt) => apt.status === "Cancelled" || apt.status === "No Show"
       ).length,
       todayAppointments: appointmentsData.filter((apt) => {
-        const aptDate = new Date(apt.date).toISOString().split("T")[0];
-        return aptDate === todayStr;
+        const rawDate = apt.date || apt.appointmentDate || apt.scheduledAt;
+        if (!rawDate) return false;
+        const aptDate = new Date(rawDate);
+        if (isNaN(aptDate.getTime())) return false;
+        return aptDate.toISOString().split("T")[0] === todayStr;
       }).length,
       upcomingAppointments: appointmentsData.filter((apt) => {
-        const aptDate = new Date(apt.date);
+        const rawDate = apt.date || apt.appointmentDate || apt.scheduledAt;
+        if (!rawDate) return false;
+        const aptDate = new Date(rawDate);
         return (
+          !isNaN(aptDate.getTime()) &&
           aptDate > today &&
-          (apt.status === "Pending" || apt.status === "Confirmed")
+          (apt.status === "Pending" || apt.status === "Confirmed" || apt.status === "Scheduled")
         );
       }).length,
     };
@@ -136,8 +149,8 @@ const Appointments = () => {
         ?.toLowerCase()
         .includes(searchTerm.toLowerCase()) ||
       appointment.reason?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.appointmentType
-        ?.toLowerCase()
+      appointmentModeLabel(appointment)
+        .toLowerCase()
         .includes(searchTerm.toLowerCase());
 
     const matchesStatus =
@@ -145,11 +158,17 @@ const Appointments = () => {
 
     const matchesType =
       appointmentTypeFilter === "" ||
-      appointment.appointmentType === appointmentTypeFilter;
+      appointmentModeLabel(appointment) === appointmentTypeFilter;
 
     const matchesDate = () => {
       if (dateFilter === "") return true;
-      const appointmentDate = new Date(appointment.date);
+      const rawDate =
+        appointment.date ||
+        appointment.appointmentDate ||
+        appointment.scheduledAt;
+      if (!rawDate) return false;
+      const appointmentDate = new Date(rawDate);
+      if (isNaN(appointmentDate.getTime())) return false;
       const today = new Date();
 
       switch (dateFilter) {
@@ -187,10 +206,19 @@ const Appointments = () => {
         ?.toLowerCase()
         .includes(filters.doctor.toLowerCase());
 
-    const matchesSpecificDate =
-      !filters.specificDate ||
-      new Date(appointment.date).toISOString().split("T")[0] ===
-        filters.specificDate;
+    const matchesSpecificDate = (() => {
+      if (!filters.specificDate) return true;
+      const rawDate =
+        appointment.date ||
+        appointment.appointmentDate ||
+        appointment.scheduledAt;
+      if (!rawDate) return false;
+      const d = new Date(rawDate);
+      return (
+        !isNaN(d.getTime()) &&
+        d.toISOString().split("T")[0] === filters.specificDate
+      );
+    })();
 
     const matchesPriority =
       !filters.priority ||
@@ -213,39 +241,41 @@ const Appointments = () => {
 
   // Sort filtered appointments
   const sortedAppointments = [...filteredAppointments].sort((a, b) => {
-    switch (sortBy) {
-      case "latest":
-        // Sort by creation date (latest first), then by appointment date (latest first)
-        const createdAtDiff =
-          new Date(b.createdAt || b.updatedAt) -
-          new Date(a.createdAt || a.updatedAt);
-        if (createdAtDiff !== 0) return createdAtDiff;
-        return new Date(b.date) - new Date(a.date);
+    const rawDateA = a.date || a.appointmentDate || a.scheduledAt;
+    const rawDateB = b.date || b.appointmentDate || b.scheduledAt;
+    const dateA = rawDateA ? new Date(rawDateA).getTime() || 0 : 0;
+    const dateB = rawDateB ? new Date(rawDateB).getTime() || 0 : 0;
 
-      case "oldest":
-        // Sort by creation date (oldest first), then by appointment date (oldest first)
-        const createdAtDiffOld =
-          new Date(a.createdAt || a.updatedAt) -
-          new Date(b.createdAt || b.updatedAt);
+    switch (sortBy) {
+      case "latest": {
+        const createdB = new Date(b.createdAt || b.updatedAt || 0).getTime() || 0;
+        const createdA = new Date(a.createdAt || a.updatedAt || 0).getTime() || 0;
+        const createdAtDiff = createdB - createdA;
+        if (createdAtDiff !== 0) return createdAtDiff;
+        return dateB - dateA;
+      }
+
+      case "oldest": {
+        const createdB = new Date(b.createdAt || b.updatedAt || 0).getTime() || 0;
+        const createdA = new Date(a.createdAt || a.updatedAt || 0).getTime() || 0;
+        const createdAtDiffOld = createdA - createdB;
         if (createdAtDiffOld !== 0) return createdAtDiffOld;
-        return new Date(a.date) - new Date(b.date);
+        return dateA - dateB;
+      }
 
       case "appointment_date_asc":
-        // Sort by appointment date (earliest first)
-        return new Date(a.date) - new Date(b.date);
+        return dateA - dateB;
 
       case "appointment_date_desc":
-        // Sort by appointment date (latest first)
-        return new Date(b.date) - new Date(a.date);
+        return dateB - dateA;
 
-      case "patient_name":
-        // Sort by patient name alphabetically
+      case "patient_name": {
         const nameA = a.patientId?.fullName || a.patientName || "";
         const nameB = b.patientId?.fullName || b.patientName || "";
         return nameA.localeCompare(nameB);
+      }
 
       case "status":
-        // Sort by status
         return (a.status || "").localeCompare(b.status || "");
 
       default:
@@ -276,7 +306,9 @@ const Appointments = () => {
   };
 
   const formatAppointmentDate = (date) => {
+    if (!date) return "N/A";
     const appointmentDate = new Date(date);
+    if (isNaN(appointmentDate.getTime())) return "N/A";
     if (isToday(appointmentDate)) {
       return "Today";
     } else if (isTomorrow(appointmentDate)) {
@@ -766,7 +798,8 @@ const Appointments = () => {
               {sortedAppointments.map((appointment) => (
                 <tr
                   key={appointment._id}
-                  className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-green-50 dark:hover:from-gray-800 dark:hover:to-gray-800 transition-all duration-200 border-l-4 border-transparent hover:border-[#004D99] dark:hover:border-blue-400"
+                  onClick={() => setSelectedAppointment(appointment)}
+                  className="cursor-pointer hover:bg-gradient-to-r hover:from-blue-50 hover:to-green-50 dark:hover:from-gray-800 dark:hover:to-gray-800 transition-all duration-200 border-l-4 border-transparent hover:border-[#004D99] dark:hover:border-blue-400"
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -816,6 +849,13 @@ const Appointments = () => {
                             appointment.patientId?.attenderMobile ||
                             "N/A"}
                         </div>
+                        {painLocation(appointment.painAreas) && (
+                          <div className="text-xs text-rose-600 dark:text-rose-400 mt-1">
+                            Pain: {painLocation(appointment.painAreas)}
+                            {appointment.painLevel ? ` • ${appointment.painLevel}/10` : ""}
+                            {appointment.painDuration ? ` • ${appointment.painDuration}` : ""}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -865,8 +905,10 @@ const Appointments = () => {
                       {formatAppointmentDate(appointment.date)}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {appointment.time || "17:30"} (
-                      {appointment.duration || "30"}min)
+                      {appointment.time || "—"}
+                    </div>
+                    <div className={`text-xs mt-1 font-medium ${appointmentModeLabel(appointment) === "Virtual" ? "text-purple-600 dark:text-purple-400" : "text-teal-700 dark:text-teal-400"}`}>
+                      {appointmentModeLabel(appointment)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -916,6 +958,103 @@ const Appointments = () => {
           </div>
         )}
       </div>
+
+      {/* Appointment details */}
+      {selectedAppointment && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setSelectedAppointment(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-950 shadow-2xl border border-gray-100 dark:border-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between p-6 border-b border-gray-100 dark:border-gray-800">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {selectedAppointment.patientId?.fullName || selectedAppointment.patientName || "Unknown Patient"}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {formatAppointmentDate(selectedAppointment.date)} • {selectedAppointment.time || "—"}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(selectedAppointment.status)}`}>
+                  {selectedAppointment.status}
+                </span>
+                <button
+                  onClick={() => setSelectedAppointment(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  aria-label="Close"
+                >
+                  <XCircle className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Doctor</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">
+                    {selectedAppointment.doctorId?.fullName ? `Dr. ${selectedAppointment.doctorId.fullName}` : selectedAppointment.doctorName || "Not assigned"}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{selectedAppointment.doctorId?.specialty || selectedAppointment.department || ""}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Clinic</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">{selectedAppointment.clinicId?.name || "—"}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {[selectedAppointment.clinicId?.city, selectedAppointment.clinicId?.state].filter(Boolean).join(", ")}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">
+                    {appointmentModeLabel(selectedAppointment)}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">{(selectedAppointment.priority || "normal").toUpperCase()}</div>
+                </div>
+              </div>
+
+              {painSummary(selectedAppointment) && (
+                <div className="rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 p-4">
+                  <div className="text-xs font-medium text-rose-700 dark:text-rose-300 uppercase tracking-wider">Pain Location</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white mt-1">{painLocation(selectedAppointment.painAreas)}</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                    {[
+                      selectedAppointment.painLevel ? `Pain ${selectedAppointment.painLevel}/10` : null,
+                      selectedAppointment.painDuration || null,
+                    ].filter(Boolean).join(" • ")}
+                  </div>
+                </div>
+              )}
+
+              {selectedAppointment.reason && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Reason for Visit</div>
+                  <p className="text-sm text-gray-900 dark:text-white whitespace-pre-line">{selectedAppointment.reason}</p>
+                </div>
+              )}
+              {selectedAppointment.notes && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Notes</div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{selectedAppointment.notes}</p>
+                </div>
+              )}
+              {selectedAppointment.instructions && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Instructions</div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{selectedAppointment.instructions}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
