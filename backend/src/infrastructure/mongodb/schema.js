@@ -27,7 +27,12 @@ const VALIDATORS = {
   practitioners: tenant({ kind: enumOf(['doctor', 'nurse', 'lab_technician']), fullName: str, isActive: bool }, ['kind', 'fullName']),
   patients: tenant({ fullName: str, gender: { bsonType: ['string', 'null'], enum: ['male', 'female', 'other', 'unknown', null] }, status: enumOf(['active', 'inactive', 'deceased', 'merged']) }, ['fullName', 'status']),
   patient_identifiers: tenant({ patientId: uuid, system: enumOf(['uhid', 'mrn', 'aadhaar', 'insurance', 'legacy_mongo', 'external']), value: str }, ['patientId', 'system', 'value']),
-  appointments: tenant({ patientId: uuid, practitionerId: nullableUuid, scheduledAt: date, durationMinutes: { bsonType: ['int', 'double', 'long'], minimum: 5, maximum: 480 }, status: enumOf(['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show']), priority: enumOf(['low', 'normal', 'high']) }, ['patientId', 'scheduledAt', 'status']),
+  /* `appointments` is SHARED with the consultant dashboard and the Physio app, which write their own
+   * shape: `date` + `time` instead of scheduledAt, a 10-minute payment hold with status 'Held' and no
+   * patientId yet (the patient record is created when payment completes), then 'Processing'/'Expired'.
+   * Requiring patientId + scheduledAt and a five-value status enum made every Physio slot hold fail
+   * with "The database rejected the record". Only status is required; the rest is typed, not demanded. */
+  appointments: tenant({ patientId: nullableUuid, practitionerId: nullableUuid, scheduledAt: ndate, durationMinutes: { bsonType: ['int', 'double', 'long'], minimum: 5, maximum: 480 }, status: str, priority: enumOf(['low', 'normal', 'high']) }, ['status']),
   encounters: tenant({ patientId: uuid, status: enumOf(['Scheduled', 'In Progress', 'Completed', 'Cancelled', 'No Show']), startedAt: date }, ['patientId', 'status', 'startedAt']),
   vitals: tenant({ patientId: uuid, recordedAt: date, oxygenSaturation: { bsonType: ['int', 'double', 'long', 'null'], minimum: 0, maximum: 100 }, painScore: { bsonType: ['int', 'null'], minimum: 0, maximum: 10 } }, ['patientId', 'recordedAt']),
   clinical_conditions: tenant({ patientId: uuid, display: str, clinicalStatus: enumOf(['active', 'recurrence', 'relapse', 'inactive', 'remission', 'resolved']) }, ['patientId', 'display', 'clinicalStatus']),
