@@ -6,10 +6,13 @@ const { serializeRow, ref } = require('../../common/utils/serialize');
 const { auditInTrx } = require('../audit/auditRepository');
 const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository');
 const documents = require('../documents/documentService');
+const consultantLogin = require('./consultantLogin');   // 2026-10-08 RBAC: optional consultant-app sign-in
+const { hasPermission } = require('../../common/security/rbac');
+const { forbidden } = require('../../common/errors/AppError');
 
 const FIELDS = ['fullName', 'email', 'phone', 'specialty', 'qualification', 'licenseNumber', 'department', 'shift', 'experienceYears', 'about', 'uhid', 'isActive', 'languages', 'currentAddress', 'permanentAddress'];
 const ALIASES = { specialization: 'specialty', experience: 'experienceYears', name: 'fullName' };
-const IGNORED = new Set(['_id', 'id', 'clinicId', 'kind', 'role', 'passwordHash', 'password', 'profileImage', 'createdAt', 'updatedAt', 'version', 'clinic', '__v', 'attributes']);
+const IGNORED = new Set(['_id', 'id', 'clinicId', 'kind', 'role', 'passwordHash', 'password', 'profileImage', 'createdAt', 'updatedAt', 'version', 'clinic', '__v', 'attributes', 'consultantLogin', 'consultantAccount']);
 
 function toDoc(input) {
   const n = { ...input };
@@ -73,7 +76,12 @@ async function saveProfile(db, scope, row, dataUrl, ctx) {
   const doc = await documents.storeDocument(db, scope, { buffer: parsed.buffer, fileName: `profile.${parsed.mime.split('/')[1] || 'jpg'}`, claimedMime: parsed.mime, clinicId: row.clinicId, category: 'profile', documentType: 'practitioner_profile_photo', title: 'Profile photo', requestId: ctx.requestId, ip: ctx.ip });
   return doc._id;
 }
-async function create(scope, kind, input, ctx) {
+function loginAllowed(scope, login) {
+  if (login && !hasPermission(scope.role, 'users:manage')) throw forbidden('Creating a sign-in needs users:manage', 'PERMISSION_DENIED');
+}
+async function create(scope, kind, rawInput, ctx) {
+  const { login, input } = consultantLogin.takeLogin(rawInput);   // never reaches toDoc / attributes
+  loginAllowed(scope, login);
   const { doc, attrs } = toDoc(input);
   if (!doc.fullName) throw badRequest('fullName is required', 'VALIDATION_ERROR');
   const clinicId = resolveClinicId(scope, input.clinicId);
@@ -82,12 +90,16 @@ async function create(scope, kind, input, ctx) {
     if (!(await db.c('clinics').exists({ _id: clinicId }))) throw notFound('Clinic');
     const created = await db.c('practitioners').insertOne({ ...doc, kind, clinicId, isActive: doc.isActive !== false, languages: doc.languages || [], attributes: attrs, profileImageUrl: typeof input.profileImage === 'string' && /^https?:\/\//.test(input.profileImage) ? input.profileImage : null, profileDocumentId: null });
     if (input.profileImage && /^data:/.test(input.profileImage)) { const docId = await saveProfile(db, scope, created, input.profileImage, ctx); if (docId) { await db.c('practitioners').updateOne({ _id: created._id }, { profileDocumentId: docId }); created.profileDocumentId = docId; } }
-    await auditInTrx(db, { ...scope, clinicId }, { action: 'PRACTITIONER_CREATED', resourceType: 'practitioner', resourceId: created._id, requestId: ctx.requestId, ip: ctx.ip, details: { kind } });
+    const link = await consultantLogin.provision(db, created, login, { creating: true });
+    if (link) { await db.c('practitioners').updateOne({ _id: created._id }, { consultantAccount: link }); created.consultantAccount = link; }
+    await auditInTrx(db, { ...scope, clinicId }, { action: 'PRACTITIONER_CREATED', resourceType: 'practitioner', resourceId: created._id, requestId: ctx.requestId, ip: ctx.ip, details: { kind, ...(link ? { consultantLogin: { role: link.role, collection: link.collection } } : {}) } });
     await enqueueEvent(db, { type: 'practitioner.created', aggregateType: 'practitioner', aggregateId: created._id, clinicId, actorId: scope.userId, payload: { kind } });
     return (await hydrate(db, [created]))[0];
   });
 }
-async function update(scope, kind, id, input, ctx) {
+async function update(scope, kind, id, rawInput, ctx) {
+  const { login, input } = consultantLogin.takeLogin(rawInput);
+  loginAllowed(scope, login);
   const { doc, attrs } = toDoc(input);
   return withTenant(scope, async (db) => {
     const current = await db.c('practitioners').findOne({ _id: id, kind });
@@ -96,8 +108,14 @@ async function update(scope, kind, id, input, ctx) {
     if (Object.keys(attrs).length) patch.attributes = { ...(current.attributes || {}), ...attrs };
     if (typeof input.profileImage === 'string' && /^https?:\/\//.test(input.profileImage)) patch.profileImageUrl = input.profileImage;
     if (input.profileImage && /^data:/.test(input.profileImage)) { const docId = await saveProfile(db, scope, current, input.profileImage, ctx); if (docId) patch.profileDocumentId = docId; }
-    const updated = await db.c('practitioners').updateOne({ _id: id }, patch);
-    await auditInTrx(db, scope, { action: 'PRACTITIONER_UPDATED', resourceType: 'practitioner', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(doc) } });
+    let updated = await db.c('practitioners').updateOne({ _id: id }, patch);
+    if (login) {
+      const link = await consultantLogin.provision(db, updated, login, { creating: false });
+      if (link && (!updated.consultantAccount || updated.consultantAccount.role !== link.role)) updated = await db.c('practitioners').updateOne({ _id: id }, { consultantAccount: link });
+    } else {
+      await consultantLogin.syncLinked(db, updated);
+    }
+    await auditInTrx(db, scope, { action: 'PRACTITIONER_UPDATED', resourceType: 'practitioner', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(doc), ...(login ? { consultantLogin: { role: login.role || null, passwordChanged: login.password !== undefined } } : {}) } });
     return (await hydrate(db, [updated]))[0];
   });
 }
@@ -105,6 +123,7 @@ async function setActive(scope, kind, id, isActive, ctx) {
   return withTenant(scope, async (db) => {
     const updated = await db.c('practitioners').updateOne({ _id: id, kind }, { isActive });
     if (!updated) throw notFound(kind === 'doctor' ? 'Doctor' : 'Nurse');
+    await consultantLogin.syncLinked(db, updated);   // deactivated here = locked out of the consultant app too
     await auditInTrx(db, scope, { action: isActive ? 'PRACTITIONER_ACTIVATED' : 'PRACTITIONER_DEACTIVATED', resourceType: 'practitioner', resourceId: id, requestId: ctx.requestId, ip: ctx.ip });
     return (await hydrate(db, [updated]))[0];
   });

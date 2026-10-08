@@ -31,6 +31,12 @@ const body = z.object({
   profileImage: z.string().max(20 * 1024 * 1024).optional().nullable(),
   clinicId: uuid.optional(),
   isActive: z.boolean().optional(),
+  /* 2026-10-08 RBAC: optional consultant-app (Knee CDSS) sign-in for this practitioner — see consultantLogin.js.
+   * role: doctor | physiotherapist | admin for a doctor; nurse | head_nurse | supervisor for a nurse. */
+  consultantLogin: z.object({
+    role: z.enum(['doctor', 'physiotherapist', 'admin', 'nurse', 'head_nurse', 'supervisor']).optional(),
+    password: z.string().min(8).max(200).optional(),
+  }).strict().optional(),
 }).passthrough();
 const listQuery = paginationQuery.extend({ limit: z.coerce.number().int().min(1).max(500).default(100), search: z.string().max(100).optional(), specialty: z.string().max(100).optional(), isActive: z.enum(['true', 'false']).transform((v) => v === 'true').optional(), clinicId: uuid.optional() });
 

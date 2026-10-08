@@ -2,6 +2,13 @@
 /**
  * Central role based access control. The EMR has exactly two application roles.
  * Practitioners (doctors, nurses, lab technicians) are clinical resources, not roles.
+ *
+ * SHARED ROLE MATRIX (2026-10-08). The consultant app (Knee CDSS) keeps the cross-app matrix in its
+ * backend/config/permissions.js. These two roles are its `platform_admin` (super_master_admin) and `clinic_admin`
+ * rows, and match it. Every other role there — admin, doctor, physiotherapist, nurse / head_nurse / supervisor,
+ * pharmacist, receptionist, developer_admin — signs in to the consultant app only. A practitioner gets that
+ * sign-in from here through `consultantLogin` on create/update (modules/practitioners/consultantLogin.js,
+ * guarded by users:manage); it never becomes an EMR role, and its token is never valid here.
  */
 const ROLES = Object.freeze({
   SUPER_MASTER_ADMIN: 'super_master_admin',
