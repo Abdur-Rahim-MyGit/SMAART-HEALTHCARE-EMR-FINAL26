@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { clinicsAPI } from "../../services/api";
 import { toast } from "react-hot-toast";
 import "./Clinics.css";
+import ClinicLocationPicker from "./ClinicLocationPicker";
 
 const specialtiesList = [
   "physio",
@@ -25,6 +26,14 @@ const ClinicEdit = () => {
   const [clinic, setClinic] = useState(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({});
+  // Map point; sent only when changed here (a changed address is re-geocoded on save otherwise).
+  const [mapPoint, setMapPoint] = useState(null);
+  const [locationTouched, setLocationTouched] = useState(false);
+  // Address edited after "Find on map": drop that point so the new address is geocoded on save.
+  useEffect(() => {
+    if (locationTouched && mapPoint && mapPoint.geoSource !== "pin") setLocationTouched(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.address, form.city, form.state, form.zipCode, form.country]);
   const [formErrors, setFormErrors] = useState({});
   const [additionalUsers, setAdditionalUsers] = useState([]);
 
@@ -64,6 +73,8 @@ const ClinicEdit = () => {
           };
           
           setForm(mappedForm);
+          setMapPoint(clinicData.latitude != null ? { latitude: clinicData.latitude, longitude: clinicData.longitude, geoSource: clinicData.geoSource } : null);
+          setLocationTouched(false);
           setAdditionalUsers(clinicData.additionalUsers || []);
         } else {
           toast.error("Clinic not found");
@@ -231,6 +242,7 @@ const ClinicEdit = () => {
         phone: form.phone,
         email: form.email,
         website: form.website,
+        ...(locationTouched && mapPoint ? { latitude: mapPoint.latitude, longitude: mapPoint.longitude, geoSource: mapPoint.geoSource } : {}),
 
         // Ownership & Administration
         ownerName: form.ownerName,
@@ -555,6 +567,15 @@ const ClinicEdit = () => {
                   onChange={handleChange}
                 />
               </div>
+              <ClinicLocationPicker
+                address={form.address}
+                city={form.city}
+                state={form.state}
+                zipCode={form.zipCode}
+                country={form.country}
+                value={mapPoint}
+                onChange={(v) => { setMapPoint(v); setLocationTouched(true); }}
+              />
             </div>
             {/* Ownership & Administration */}
             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 border-b border-gray-200 dark:border dark:border-gray-800 pb-2 mt-6">

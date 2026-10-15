@@ -9,6 +9,9 @@ const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository')
 const { auditInTrx } = require('../audit/auditRepository');
 const { cached, cacheDel } = require('../../infrastructure/redis/cache');
 const { revokeSessionsFor } = require('../auth/authService');
+const { geocodeAddress, validPoint } = require('../../common/geo/geocoder');
+const { mirrorClinicToMongo, deactivateClinicMirror } = require('./clinicMirror');
+const { getLogger } = require('../../common/logging/logger');
 
 const FIELDS = ['name', 'type', 'registrationNumber', 'yearOfEstablishment', 'address', 'city', 'state', 'country', 'zipCode', 'phone', 'email', 'website', 'ownerName', 'ownerMedicalId', 'adminName', 'adminContact', 'tradeLicense', 'medicalCouncilCert', 'taxId', 'accreditation', 'operatingHours', 'staffCount', 'beds', 'pharmacyAvailable', 'laboratoryAvailable', 'bankInfo', 'specialties', 'services', 'paymentMethods'];
 const CLINIC_ADMIN_EDITABLE = ['phone', 'email', 'website', 'address', 'city', 'state', 'country', 'zipCode', 'operatingHours', 'staffCount', 'beds', 'pharmacyAvailable', 'laboratoryAvailable', 'specialties', 'services', 'paymentMethods', 'adminContact', 'adminName'];
@@ -38,6 +41,14 @@ function pick(input, fields) {
   }
   return out;
 }
+
+function toRow(input) {
+  const row = pickForDb(input, CLINIC_FIELDS);
+  for (const f of JSON_FIELDS) if (input[f] !== undefined) row[f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = JSON.stringify(Array.isArray(input[f]) ? input[f] : []);
+  if (input.email) row.email = String(input.email).toLowerCase();
+  return row;
+}
+
 function validityFrom(input) {
   const vp = input.validityPeriod || {};
   const start = vp.startDate ? new Date(vp.startDate) : new Date();
@@ -68,28 +79,27 @@ async function create(scope, input, ctx) {
   if (problems.length) throw badRequest(`Admin password must contain ${problems.join(', ')}`, 'WEAK_PASSWORD');
   const adminEmail = String(input.adminEmail).toLowerCase();
   const passwordHash = await hashPassword(input.adminPassword);
-  return withTenant(scope, async (db) => {
-    if (await db.c('users').exists({ email: adminEmail })) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
-    // A blank admin name is not a reason to reject the clinic: fall back to the owner.
+  return withTenant(scope, async (trx) => {
+    const existingUser = await trx('users').whereRaw('lower(email::text) = ?', [adminEmail]).whereNull('deleted_at').first('id');
+    if (existingUser) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
     const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
-    /* ObjectId, not a UUID string: the consultant app loads this same `clinics` collection through
-     * Mongoose with an ObjectId `_id`, stamps patients and appointments with it, and its login scope
-     * requires a valid ObjectId. A UUID-keyed clinic silently loses its id there and can neither log
-     * in nor be scoped. Every id helper here accepts ObjectId and its 24-hex string alike. */
-    const clinic = await db.c('clinics').insertOne({ _id: new ObjectId(), ...pick(input, FIELDS), name: input.name, adminName, adminEmail, adminUsername: input.adminUsername || null, clinicCode: input.clinicId || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
+    const [clinic] = await trx('clinics')
+      .insert({ ...toRow(input), admin_name: adminName, admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: input.clinicId || null, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
+      .returning('*');
     const [firstName, ...rest] = adminName.split(' ');
-    const admin = await db.c('users').insertOne({ clinicId: clinic._id, role: ROLES.CLINIC_ADMIN, email: adminEmail, passwordHash, firstName, lastName: rest.join(' ') || null, fullName: adminName, phone: input.adminContact || null, username: input.adminUsername || null, isActive: true, isVerified: true, lastLoginAt: null, failedLoginAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
-    await auditInTrx(db, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic._id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin._id } });
-    await enqueueEvent(db, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic._id, clinicId: clinic._id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
+    const [admin] = await trx('users')
+      .insert({ clinic_id: clinic.id, role: ROLES.CLINIC_ADMIN, email: adminEmail, password_hash: passwordHash, first_name: firstName, last_name: rest.join(' ') || null, full_name: adminName, phone: input.adminContact || null, username: input.adminUsername || null, is_active: true, is_verified: true, created_by: scope.userId, updated_by: scope.userId })
+      .returning('id');
+    await auditInTrx(trx, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic.id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin.id } });
+    await enqueueEvent(trx, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic.id, clinicId: clinic.id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
     return serializeClinic(clinic, { includeSensitive: true });
-  });
+  }, getKnex());
 }
 
 async function update(scope, id, input, ctx) {
   if (scope.role === ROLES.CLINIC_ADMIN && String(id) !== String(scope.clinicId)) throw forbidden('Access denied. You can only manage your own clinic.', 'CROSS_CLINIC_ACCESS');
-  return withTenant(scope, async (db) => {
-    const clinics = db.c('clinics');
-    const current = await clinics.findById(id);
+  return withTenant(scope, async (trx) => {
+    const current = await trx('clinics').where({ id }).whereNull('deleted_at').first();
     if (!current) throw notFound('Clinic');
     let patch;
     if (scope.role === ROLES.SUPER_MASTER_ADMIN) {
@@ -103,11 +113,13 @@ async function update(scope, id, input, ctx) {
       for (const k of CLINIC_ADMIN_EDITABLE) if (input[k] !== undefined) allowed[k] = input[k];
       patch = pick(allowed, FIELDS);
     }
-    let row = Object.keys(patch).length ? await clinics.updateOne({ _id: id }, patch) : current;
-    if (patch.isActive === false) await revokeSessionsFor(db, { clinicId: id, reason: 'clinic_deactivated' });
-    if (scope.role === ROLES.SUPER_MASTER_ADMIN && (input.adminEmail || input.adminPassword || input.adminName || input.adminContact || input.adminUsername !== undefined)) {
-      const admins = await db.c('users').find({ clinicId: id, role: ROLES.CLINIC_ADMIN }, { sort: { createdAt: 1 }, limit: 1 });
-      const admin = admins[0];
+    patch.updated_by = scope.userId;
+    const [row] = Object.keys(patch).length > 1 ? await trx('clinics').where({ id }).update(patch).returning('*') : [current];
+    if (patch.is_active === false) await revokeSessionsFor(trx, { clinicId: id, reason: 'clinic_deactivated' });
+
+    // Admin credential changes (super master admin only) are applied to the clinic_admin user, hashed.
+    if (scope.role === ROLES.SUPER_MASTER_ADMIN && (input.adminEmail || input.adminPassword || input.adminName || input.adminContact)) {
+      const admin = await trx('users').where({ clinic_id: id, role: ROLES.CLINIC_ADMIN }).whereNull('deleted_at').orderBy('created_at').first();
       const userPatch = {};
       if (input.adminEmail) {
         const e = String(input.adminEmail).toLowerCase();
@@ -134,13 +146,14 @@ async function update(scope, id, input, ctx) {
     await auditInTrx(db, scope, { action: 'CLINIC_UPDATED', resourceType: 'clinic', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(patch) } });
     await enqueueEvent(db, { type: 'clinic.updated', aggregateType: 'clinic', aggregateId: id, clinicId: id, actorId: scope.userId, payload: { fields: Object.keys(patch) } });
     await cacheDel(`clinic:${id}`);
+    updatedRow = row;
     return serializeClinic(row, { includeSensitive: true });
-  });
+  }, getKnex());
 }
 
 async function remove(scope, id, ctx) {
-  return withTenant(scope, async (db) => {
-    const row = await db.c('clinics').findById(id);
+  return withTenant(scope, async (trx) => {
+    const row = await trx('clinics').where({ id }).whereNull('deleted_at').first('id');
     if (!row) throw notFound('Clinic');
     await db.c('clinics').updateOne({ _id: id }, { deletedAt: new Date(), isActive: false });
     await db.c('users').updateMany({ clinicId: id }, { isActive: false, deletedAt: new Date() });
@@ -149,7 +162,7 @@ async function remove(scope, id, ctx) {
     await enqueueEvent(db, { type: 'clinic.deactivated', aggregateType: 'clinic', aggregateId: id, clinicId: id, actorId: scope.userId, payload: {} });
     await cacheDel(`clinic:${id}`);
     return true;
-  });
+  }, getKnex());
 }
 
 async function dashboardData(scope, clinicId) {
@@ -209,4 +222,4 @@ async function search(db, term, limit) {
   return (await db.c('clinics').find({ $or: [{ name: contains(term) }, { type: contains(term) }, { city: contains(term) }, { state: contains(term) }, { ownerName: contains(term) }, { registrationNumber: contains(term) }] }, { limit })).map((c) => serializeClinic(c));
 }
 
-module.exports = { list, getById, getPublicClinic, create, update, remove, dashboardData, validity, renew, expiringSoon, expired, serializeClinic, search };
+module.exports = { list, getById, getPublicClinic, create, update, remove, dashboardData, validity, renew, expiringSoon, expired, serializeClinic };
