@@ -84,6 +84,8 @@ export const clinicsAPI = {
   create: (data) => api.post("/clinics", data),
   update: (id, data) => api.put(`/clinics/${id}`, data),
   delete: (id) => api.delete(`/clinics/${id}`),
+  // Address -> latitude/longitude for the clinic form ("Find on map"); saves nothing.
+  geocode: (address) => api.post("/clinics/geocode", address),
   getDashboardData: (id) => api.get(`/clinics/${id}/dashboard-data`),
 
   // Validity management

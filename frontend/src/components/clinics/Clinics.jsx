@@ -20,6 +20,7 @@ import { clinicsAPI } from "../../services/api";
 import { toast } from "react-hot-toast";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./Clinics.css";
+import ClinicLocationPicker from "./ClinicLocationPicker";
 
 const Clinics = () => {
   const navigate = useNavigate();
@@ -42,6 +43,8 @@ const Clinics = () => {
 
   // Advanced filters visibility
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  // Map point chosen with "Find on map" / the pin (null = let the server geocode on save).
+  const [newLocation, setNewLocation] = useState(null);
   const [form, setForm] = useState({
     name: "",
     type: "",
@@ -127,6 +130,11 @@ const Clinics = () => {
     validityDuration: "12", // Default to 12 months (1 year)
   });
   const [saving, setSaving] = useState(false);
+  // Address edited after "Find on map": that point is stale, look the new address up on save
+  // (a pin the admin placed by hand is kept).
+  useEffect(() => {
+    setNewLocation((l) => (l && l.geoSource !== "pin" ? null : l));
+  }, [form.address, form.city, form.state, form.zipCode, form.country]);
   const [formErrors, setFormErrors] = useState({});
   const [additionalUsers, setAdditionalUsers] = useState([]);
 
@@ -426,6 +434,8 @@ const Clinics = () => {
                     phone: form.phone,
                     email: form.email,
                     website: form.website || "",
+                    // Only when the admin checked it on the map; otherwise the server geocodes the address.
+                    ...(newLocation ? { latitude: newLocation.latitude, longitude: newLocation.longitude, geoSource: newLocation.geoSource } : {}),
                     ownerName: form.ownerName,
                     ownerMedicalId: form.ownerMedicalId || "",
 
@@ -535,6 +545,7 @@ const Clinics = () => {
                     if (response.data.success) {
                       toast.success("Clinic added successfully");
                       setShowModal(false);
+                      setNewLocation(null);
                       setForm({
                         name: "",
                         type: "",
@@ -861,6 +872,16 @@ const Clinics = () => {
                       }
                     />
                   </div>
+                  <ClinicLocationPicker
+                    address={form.address}
+                    city={form.city}
+                    state={form.state}
+                    zipCode={form.zipCode}
+                    country={form.country}
+                    value={newLocation}
+                    onChange={setNewLocation}
+                    disabled={saving}
+                  />
                 </div>
 
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2 mt-8">

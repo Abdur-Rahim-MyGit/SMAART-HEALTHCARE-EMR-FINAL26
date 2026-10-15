@@ -10,6 +10,9 @@ const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository')
 const { auditInTrx } = require('../audit/auditRepository');
 const { cached, cacheDel } = require('../../infrastructure/redis/cache');
 const { revokeSessionsFor } = require('../auth/authService');
+const { geocodeAddress, validPoint } = require('../../common/geo/geocoder');
+const { mirrorClinicToMongo, deactivateClinicMirror } = require('./clinicMirror');
+const { getLogger } = require('../../common/logging/logger');
 
 const repo = new BaseRepository('clinics', { tenantColumn: null }); // used for write scope resolution
 void repo;
@@ -43,6 +46,46 @@ function serializeClinic(row, { includeSensitive = false } = {}) {
     delete out.settings;
   }
   return out;
+}
+
+// ── Location (latitude/longitude) ────────────────────────────────────────────
+const GEO_SOURCES = ['address', 'zip', 'city', 'pin'];
+const ADDRESS_KEYS = { address: 'address', city: 'city', state: 'state', country: 'country', zipCode: 'zip_code' };
+
+/**
+ * Columns to set for the clinic's map point. Coordinates sent by the form (from
+ * "Find on map", or a pin the admin dragged) win; otherwise the address is
+ * geocoded when it is new or changed, or when the clinic has no point yet.
+ * A failed lookup leaves the existing point alone (and is logged).
+ */
+async function resolveLocation(input, current) {
+  const lat = Number(input.latitude);
+  const lng = Number(input.longitude);
+  if (input.latitude != null && input.longitude != null && input.latitude !== '' && validPoint(lat, lng)) {
+    return { latitude: lat, longitude: lng, geo_source: GEO_SOURCES.includes(input.geoSource) ? input.geoSource : 'pin', geocoded_at: new Date() };
+  }
+  const changed = !current || Object.entries(ADDRESS_KEYS).some(([k, col]) => input[k] !== undefined && String(input[k] || '').trim() !== String(current[col] || '').trim());
+  if (!changed && current && current.latitude != null) return {};
+  const merged = {};
+  for (const [k, col] of Object.entries(ADDRESS_KEYS)) merged[k] = input[k] !== undefined ? input[k] : current ? current[col] : undefined;
+  try {
+    const hit = await geocodeAddress(merged);
+    if (hit) return { latitude: hit.latitude, longitude: hit.longitude, geo_source: hit.source, geocoded_at: new Date() };
+    getLogger().warn({ clinicId: current && current.id }, 'clinic address could not be geocoded');
+  } catch (err) {
+    getLogger().warn({ err, clinicId: current && current.id }, 'clinic geocoding failed');
+  }
+  return {};
+}
+
+/** "Find on map" in the clinic form: look the address up without saving anything. */
+async function geocodePreview(input) {
+  return geocodeAddress(input);
+}
+
+/** Mirror after commit; never blocks or fails the save. */
+function mirrorLater(row) {
+  if (row) mirrorClinicToMongo(row).catch(() => {});
 }
 
 function toRow(input) {
@@ -93,12 +136,14 @@ async function create(scope, input, ctx) {
   if (problems.length) throw badRequest(`Admin password must contain ${problems.join(', ')}`, 'WEAK_PASSWORD');
   const adminEmail = String(input.adminEmail).toLowerCase();
   const passwordHash = await hashPassword(input.adminPassword);
-  return withTenant(scope, async (trx) => {
+  const location = await resolveLocation(input, null); // network lookup before the transaction opens
+  let createdRow = null;
+  const result = await withTenant(scope, async (trx) => {
     const existingUser = await trx('users').whereRaw('lower(email::text) = ?', [adminEmail]).whereNull('deleted_at').first('id');
     if (existingUser) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
     const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
     const [clinic] = await trx('clinics')
-      .insert({ ...toRow(input), admin_name: adminName, admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: input.clinicId || null, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
+      .insert({ ...toRow(input), ...location, admin_name: adminName, admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: input.clinicId || null, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
       .returning('*');
     const [firstName, ...rest] = adminName.split(' ');
     const [admin] = await trx('users')
@@ -106,13 +151,17 @@ async function create(scope, input, ctx) {
       .returning('id');
     await auditInTrx(trx, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic.id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin.id } });
     await enqueueEvent(trx, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic.id, clinicId: clinic.id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
+    createdRow = clinic;
     return serializeClinic(clinic, { includeSensitive: true });
   }, getKnex());
+  mirrorLater(createdRow);
+  return result;
 }
 
 async function update(scope, id, input, ctx) {
   if (scope.role === ROLES.CLINIC_ADMIN && String(id) !== String(scope.clinicId)) throw forbidden('Access denied. You can only manage your own clinic.', 'CROSS_CLINIC_ACCESS');
-  return withTenant(scope, async (trx) => {
+  let updatedRow = null;
+  const result = await withTenant(scope, async (trx) => {
     const current = await trx('clinics').where({ id }).whereNull('deleted_at').first();
     if (!current) throw notFound('Clinic');
     let patch;
@@ -127,6 +176,7 @@ async function update(scope, id, input, ctx) {
       for (const k of CLINIC_ADMIN_EDITABLE) if (input[k] !== undefined) allowed[k] = input[k];
       patch = toRow(allowed);
     }
+    Object.assign(patch, await resolveLocation(input, current));
     patch.updated_by = scope.userId;
     const [row] = Object.keys(patch).length > 1 ? await trx('clinics').where({ id }).update(patch).returning('*') : [current];
     if (patch.is_active === false) await revokeSessionsFor(trx, { clinicId: id, reason: 'clinic_deactivated' });
@@ -165,12 +215,15 @@ async function update(scope, id, input, ctx) {
     await auditInTrx(trx, scope, { action: 'CLINIC_UPDATED', resourceType: 'clinic', resourceId: id, requestId: ctx.requestId, ip: ctx.ip, details: { fields: Object.keys(patch) } });
     await enqueueEvent(trx, { type: 'clinic.updated', aggregateType: 'clinic', aggregateId: id, clinicId: id, actorId: scope.userId, payload: { fields: Object.keys(patch) } });
     await cacheDel(`clinic:${id}`);
+    updatedRow = row;
     return serializeClinic(row, { includeSensitive: true });
   }, getKnex());
+  mirrorLater(updatedRow);
+  return result;
 }
 
 async function remove(scope, id, ctx) {
-  return withTenant(scope, async (trx) => {
+  const done = await withTenant(scope, async (trx) => {
     const row = await trx('clinics').where({ id }).whereNull('deleted_at').first('id');
     if (!row) throw notFound('Clinic');
     await trx('clinics').where({ id }).update({ deleted_at: trx.fn.now(), is_active: false, updated_by: scope.userId });
@@ -181,6 +234,8 @@ async function remove(scope, id, ctx) {
     await cacheDel(`clinic:${id}`);
     return true;
   }, getKnex());
+  deactivateClinicMirror(id).catch(() => {});
+  return done;
 }
 
 async function dashboardData(scope, clinicId) {
@@ -247,4 +302,4 @@ async function expired(scope) {
   }, getKnex());
 }
 
-module.exports = { list, getById, getPublicClinic, create, update, remove, dashboardData, validity, renew, expiringSoon, expired, serializeClinic };
+module.exports = { list, getById, getPublicClinic, create, update, remove, dashboardData, validity, renew, expiringSoon, expired, serializeClinic, geocodePreview, resolveLocation };
