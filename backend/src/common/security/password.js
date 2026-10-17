@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
  * clinic admin accounts, so a clinic created here can log in there without either side having to
  * understand the other's hash format. Cost 12 ≈ 250 ms per hash on a small server. */
 const BCRYPT_ROUNDS = 12;
-const MIN_LENGTH = 8;
+const MIN_LENGTH = 6;
 
 async function hashPassword(plain) {
   if (typeof plain !== 'string' || plain.length < MIN_LENGTH) {

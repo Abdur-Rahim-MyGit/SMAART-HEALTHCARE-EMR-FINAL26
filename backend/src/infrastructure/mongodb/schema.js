@@ -57,7 +57,7 @@ const VALIDATORS = {
 };
 
 const INDEXES = {
-  clinics: [[{ adminEmail: 1 }, { unique: true, partialFilterExpression: { adminEmail: { $type: 'string' }, deletedAt: null } }], [{ validityEnd: 1 }], [{ name: 'text', city: 'text', type: 'text' }]],
+  clinics: [[{ adminEmail: 1 }, { unique: true, partialFilterExpression: { adminEmail: { $type: 'string' }, deletedAt: null } }], [{ validityEnd: 1 }], [{ name: 'text', city: 'text', type: 'text' }], [{ location: '2dsphere' }]],
   users: [[{ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' }, deletedAt: null } }], [{ clinicId: 1 }]],
   roles: [], permissions: [], role_permissions: [[{ roleCode: 1, permissionCode: 1 }, { unique: true }]],
   auth_sessions: [[{ userId: 1 }], [{ refreshTokenHash: 1 }, { unique: true }], [{ previousTokenHash: 1 }], [{ expiresAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 }]],
