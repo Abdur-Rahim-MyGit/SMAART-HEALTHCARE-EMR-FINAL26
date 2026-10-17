@@ -9,6 +9,8 @@ const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository')
 const { auditInTrx } = require('../audit/auditRepository');
 const { cached, cacheDel } = require('../../infrastructure/redis/cache');
 const { revokeSessionsFor } = require('../auth/authService');
+const { geocodeAddress, validPoint } = require('../../common/geo/geocoder');
+const { getLogger } = require('../../common/logging/logger');
 
 const FIELDS = ['name', 'type', 'registrationNumber', 'yearOfEstablishment', 'address', 'city', 'state', 'country', 'zipCode', 'phone', 'email', 'website', 'ownerName', 'ownerMedicalId', 'adminName', 'adminContact', 'tradeLicense', 'medicalCouncilCert', 'taxId', 'accreditation', 'operatingHours', 'staffCount', 'beds', 'pharmacyAvailable', 'laboratoryAvailable', 'bankInfo', 'specialties', 'services', 'paymentMethods'];
 const CLINIC_ADMIN_EDITABLE = ['phone', 'email', 'website', 'address', 'city', 'state', 'country', 'zipCode', 'operatingHours', 'staffCount', 'beds', 'pharmacyAvailable', 'laboratoryAvailable', 'specialties', 'services', 'paymentMethods', 'adminContact', 'adminName'];
@@ -38,6 +40,51 @@ function pick(input, fields) {
   }
   return out;
 }
+
+// ── Location (latitude/longitude) ────────────────────────────────────────────
+const GEO_SOURCES = ['address', 'zip', 'city', 'pin'];
+const ADDRESS_FIELDS = ['address', 'city', 'state', 'country', 'zipCode'];
+
+/**
+ * The clinic's map point. `location` is the GeoJSON point ([longitude, latitude])
+ * the patient (Physio) app's "nearest hospital" search reads from this same
+ * `clinics` collection; latitude/longitude are kept alongside for the EMR form.
+ */
+function geoFields(latitude, longitude, geoSource) {
+  return { latitude, longitude, geoSource, geocodedAt: new Date(), location: { type: 'Point', coordinates: [longitude, latitude] } };
+}
+
+/**
+ * Fields to set for the clinic's map point. Coordinates sent by the form (from
+ * "Find on map", or a pin the admin dragged) win; otherwise the address is
+ * geocoded when it is new or changed, or when the clinic has no point yet.
+ * A failed lookup leaves the existing point alone (and is logged).
+ */
+async function resolveLocation(input, current) {
+  const lat = Number(input.latitude);
+  const lng = Number(input.longitude);
+  if (input.latitude != null && input.longitude != null && input.latitude !== '' && validPoint(lat, lng)) {
+    return geoFields(lat, lng, GEO_SOURCES.includes(input.geoSource) ? input.geoSource : 'pin');
+  }
+  const changed = !current || ADDRESS_FIELDS.some((k) => input[k] !== undefined && String(input[k] || '').trim() !== String(current[k] || '').trim());
+  if (!changed && current && current.latitude != null) return {};
+  const merged = {};
+  for (const k of ADDRESS_FIELDS) merged[k] = input[k] !== undefined ? input[k] : current ? current[k] : undefined;
+  try {
+    const hit = await geocodeAddress(merged);
+    if (hit) return geoFields(hit.latitude, hit.longitude, hit.source);
+    getLogger().warn({ clinicId: current && current._id }, 'clinic address could not be geocoded');
+  } catch (err) {
+    getLogger().warn({ err, clinicId: current && current._id }, 'clinic geocoding failed');
+  }
+  return {};
+}
+
+/** "Find on map" in the clinic form: look the address up without saving anything. */
+async function geocodePreview(input) {
+  return geocodeAddress(input);
+}
+
 function validityFrom(input) {
   const vp = input.validityPeriod || {};
   const start = vp.startDate ? new Date(vp.startDate) : new Date();
@@ -68,15 +115,14 @@ async function create(scope, input, ctx) {
   if (problems.length) throw badRequest(`Admin password must contain ${problems.join(', ')}`, 'WEAK_PASSWORD');
   const adminEmail = String(input.adminEmail).toLowerCase();
   const passwordHash = await hashPassword(input.adminPassword);
+  const location = await resolveLocation(input, null); // network lookup before the transaction opens
   return withTenant(scope, async (db) => {
     if (await db.c('users').exists({ email: adminEmail })) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
     // A blank admin name is not a reason to reject the clinic: fall back to the owner.
     const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
-    /* ObjectId, not a UUID string: the consultant app loads this same `clinics` collection through
-     * Mongoose with an ObjectId `_id`, stamps patients and appointments with it, and its login scope
-     * requires a valid ObjectId. A UUID-keyed clinic silently loses its id there and can neither log
-     * in nor be scoped. Every id helper here accepts ObjectId and its 24-hex string alike. */
-    const clinic = await db.c('clinics').insertOne({ _id: new ObjectId(), ...pick(input, FIELDS), name: input.name, adminName, adminEmail, adminUsername: input.adminUsername || null, clinicCode: input.clinicId || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
+    const newClinicId = new ObjectId();
+    const clinicCode = input.clinicId || `CLN-${String(newClinicId).slice(-6).toUpperCase()}`;
+    const clinic = await db.c('clinics').insertOne({ _id: newClinicId, clinicId: clinicCode, clinicCode, ...pick(input, FIELDS), ...location, name: input.name, adminName, adminEmail, adminUsername: input.adminUsername || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
     const [firstName, ...rest] = adminName.split(' ');
     const admin = await db.c('users').insertOne({ clinicId: clinic._id, role: ROLES.CLINIC_ADMIN, email: adminEmail, passwordHash, firstName, lastName: rest.join(' ') || null, fullName: adminName, phone: input.adminContact || null, username: input.adminUsername || null, isActive: true, isVerified: true, lastLoginAt: null, failedLoginAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
     await auditInTrx(db, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic._id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin._id } });
@@ -103,6 +149,7 @@ async function update(scope, id, input, ctx) {
       for (const k of CLINIC_ADMIN_EDITABLE) if (input[k] !== undefined) allowed[k] = input[k];
       patch = pick(allowed, FIELDS);
     }
+    Object.assign(patch, await resolveLocation(input, current));
     let row = Object.keys(patch).length ? await clinics.updateOne({ _id: id }, patch) : current;
     if (patch.isActive === false) await revokeSessionsFor(db, { clinicId: id, reason: 'clinic_deactivated' });
     if (scope.role === ROLES.SUPER_MASTER_ADMIN && (input.adminEmail || input.adminPassword || input.adminName || input.adminContact || input.adminUsername !== undefined)) {
@@ -209,4 +256,4 @@ async function search(db, term, limit) {
   return (await db.c('clinics').find({ $or: [{ name: contains(term) }, { type: contains(term) }, { city: contains(term) }, { state: contains(term) }, { ownerName: contains(term) }, { registrationNumber: contains(term) }] }, { limit })).map((c) => serializeClinic(c));
 }
 
-module.exports = { list, getById, getPublicClinic, create, update, remove, dashboardData, validity, renew, expiringSoon, expired, serializeClinic, search };
+module.exports = { list, getById, getPublicClinic, create, update, remove, dashboardData, validity, renew, expiringSoon, expired, serializeClinic, search, geocodePreview, resolveLocation };

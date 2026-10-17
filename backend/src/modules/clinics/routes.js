@@ -24,6 +24,10 @@ const clinicBase = {
   state: optionalString(100),
   country: optionalString(100),
   zipCode: optionalString(20),
+  // Map point: from "Find on map" or a pin dragged by the admin (otherwise the address is geocoded on save).
+  latitude: z.coerce.number().min(-90).max(90).optional().nullable(),
+  longitude: z.coerce.number().min(-180).max(180).optional().nullable(),
+  geoSource: z.enum(['address', 'zip', 'city', 'pin']).optional().nullable(),
   phone: optionalString(30),
   email: email.optional().nullable().or(z.literal('')),
   website: optionalString(200),
@@ -76,6 +80,13 @@ router.get('/:id/dashboard-data', authorize('reports:read'), validate({ params: 
 }));
 router.get('/:id/validity', authorize('clinics:read'), validate({ params: idParam }), asyncHandler(async (req, res) => {
   res.json({ success: true, validity: await service.validity(req.auth, req.params.id) });
+}));
+// "Find on map": address -> latitude/longitude for the clinic form (nothing is saved).
+const geocodeSchema = z.object({ address: optionalString(500), city: optionalString(100), state: optionalString(100), country: optionalString(100), zipCode: optionalString(20) });
+router.post('/geocode', authorize('clinics:read'), validate({ body: geocodeSchema }), asyncHandler(async (req, res) => {
+  const hit = await service.geocodePreview(req.body);
+  if (!hit) return res.json({ success: true, found: false, message: 'Could not find this address on the map. Check the address, or place the pin by hand.' });
+  res.json({ success: true, found: true, ...hit });
 }));
 router.post('/', authorize('clinics:manage'), tenantScope(), validate({ body: createSchema }), asyncHandler(async (req, res) => {
   const clinic = await service.create(req.scope, req.body, ctxOf(req));

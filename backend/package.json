@@ -15,6 +15,7 @@
     "seed": "node src/tools/migrate.js",
     "bootstrap:admin": "node src/tools/bootstrapAdmin.js",
     "migrate:data": "node src/tools/migrate-legacy-data/index.js",
+    "geocode:clinics": "node src/tools/geocodeClinics.js",
     "lint": "eslint src tests",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
