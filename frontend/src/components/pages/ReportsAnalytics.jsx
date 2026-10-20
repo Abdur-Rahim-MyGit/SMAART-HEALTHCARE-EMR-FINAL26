@@ -140,6 +140,7 @@ const ReportsAnalytics = () => {
       console.log("Fetching real dashboard data from APIs...");
 
       // Fetch all required data from backend APIs with error handling for each
+      let failedFetches = 0;
       const fetchWithFallback = async (endpoint, fallback = []) => {
         try {
           console.log(`Attempting to fetch: ${endpoint}`);
@@ -152,6 +153,7 @@ const ReportsAnalytics = () => {
             error.response?.status,
             error.response?.data || error.message
           );
+          failedFetches += 1;
           return fallback;
         }
       };
@@ -163,6 +165,10 @@ const ReportsAnalytics = () => {
           fetchWithFallback("/clinics"),
           fetchWithFallback("/appointments"),
         ]);
+
+      if (failedFetches === 4) {
+        throw new Error("could not reach the reporting APIs");
+      }
 
       console.log("API responses received:", {
         doctors: doctorsData,
@@ -258,10 +264,7 @@ const ReportsAnalytics = () => {
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
       setError(`Failed to fetch data: ${error.message}`);
-      toast.error("Failed to fetch dashboard data - using fallback data");
-
-      // Only use mock data as absolute fallback
-      setDashboardData(generateMockDashboardData());
+      toast.error("Failed to fetch dashboard data");
     } finally {
       setLoading(false);
     }
@@ -444,7 +447,6 @@ const ReportsAnalytics = () => {
       patientCount: patients.filter(
         (p) => p.clinicId === clinic._id || p.clinicId?._id === clinic._id
       ).length,
-      efficiency: Math.random() * 100, // Mock efficiency score
     }));
   };
 
@@ -466,11 +468,14 @@ const ReportsAnalytics = () => {
           doctorCount: clinicDoctors.length,
           patientCount: clinicPatients.length,
           appointmentCount: clinicAppointments.length,
-          efficiency: Math.random() * 100, // Mock efficiency
-          rating: 4 + Math.random(), // Mock rating 4-5
         };
       })
-      .sort((a, b) => b.efficiency - a.efficiency);
+      // Rank by real activity: appointments, then patients
+      .sort(
+        (a, b) =>
+          b.appointmentCount - a.appointmentCount ||
+          b.patientCount - a.patientCount
+      );
   };
 
   const calculateRecentActivities = (
@@ -506,102 +511,6 @@ const ReportsAnalytics = () => {
     return activities
       .sort((a, b) => new Date(b.time) - new Date(a.time))
       .slice(0, 5);
-  };
-
-  const generateMockDashboardData = () => {
-    // Generate mock data for development/demo
-    const mockKPIs = {
-      totalDoctors: 156,
-      totalPatients: 2847,
-      totalClinics: 23,
-      totalAppointments: 1832,
-      doctorGrowth: 12.5,
-      patientGrowth: 18.3,
-      clinicGrowth: 5.2,
-      appointmentGrowth: 22.1,
-    };
-
-    const mockTrends = {
-      doctorTrend: {
-        labels: ["Jul 2025", "Aug 2025", "Sep 2025", "Oct 2025"],
-        data: [142, 148, 152, 156],
-      },
-      patientTrend: {
-        labels: ["Jul 2025", "Aug 2025", "Sep 2025", "Oct 2025"],
-        data: [2543, 2682, 2754, 2847],
-      },
-      clinicTrend: {
-        labels: ["Jul 2025", "Aug 2025", "Sep 2025", "Oct 2025"],
-        data: [21, 22, 22, 23],
-      },
-      appointmentTrend: {
-        labels: ["Jul 2025", "Aug 2025", "Sep 2025", "Oct 2025"],
-        data: [1456, 1587, 1698, 1832],
-      },
-    };
-
-    return {
-      kpis: mockKPIs,
-      trends: mockTrends,
-      distributions: {
-        patientsPerClinic: [
-          { clinicName: "City General Hospital", patientCount: 456 },
-          { clinicName: "Downtown Medical Center", patientCount: 342 },
-          { clinicName: "Suburban Health Clinic", patientCount: 298 },
-        ],
-        doctorsPerRegion: [
-          { region: "Downtown", doctorCount: 45 },
-          { region: "Suburban", doctorCount: 38 },
-          { region: "Uptown", doctorCount: 32 },
-        ],
-      },
-      relationships: [
-        {
-          clinicName: "City General Hospital",
-          doctorCount: 45,
-          patientCount: 456,
-          efficiency: 92.5,
-        },
-        {
-          clinicName: "Downtown Medical",
-          doctorCount: 32,
-          patientCount: 342,
-          efficiency: 87.3,
-        },
-      ],
-      topClinics: [
-        {
-          name: "City General Hospital",
-          doctorCount: 45,
-          patientCount: 456,
-          efficiency: 92.5,
-          rating: 4.8,
-        },
-        {
-          name: "Downtown Medical Center",
-          doctorCount: 32,
-          patientCount: 342,
-          efficiency: 87.3,
-          rating: 4.6,
-        },
-      ],
-      recentActivities: [
-        {
-          type: "doctor",
-          title: "New Doctor: Dr. Sarah Johnson",
-          time: new Date(),
-          icon: Stethoscope,
-          color: "blue",
-        },
-        {
-          type: "patient",
-          title: "New Patient: John Smith",
-          time: subDays(new Date(), 1),
-          icon: User,
-          color: "green",
-        },
-      ],
-    };
   };
 
   // Chart Configuration
@@ -767,15 +676,13 @@ const ReportsAnalytics = () => {
         const clinicsData = [
           ['TOP PERFORMING CLINICS'],
           [''],
-          ['Rank', 'Clinic Name', 'Doctors Count', 'Patients Count', 'Appointments', 'Efficiency %', 'Rating'],
+          ['Rank', 'Clinic Name', 'Doctors Count', 'Patients Count', 'Appointments'],
           ...dashboardData.topClinics.map((clinic, index) => [
             index + 1,
             clinic.name || 'Unknown Clinic',
             clinic.doctorCount || 0,
             clinic.patientCount || 0,
-            clinic.appointmentCount || 0,
-            `${(clinic.efficiency || 0).toFixed(1)}%`,
-            (clinic.rating || 0).toFixed(1)
+            clinic.appointmentCount || 0
           ])
         ];
         
@@ -904,24 +811,16 @@ const ReportsAnalytics = () => {
             kpis.appointmentGrowth >= 0 ? '✅ Growing' : '⚠️ Declining'
           ],
           [''],
-          ['PERFORMANCE HEATMAP'],
-          ['Clinic Performance Overview (Top 5)'],
-          ['Rank', 'Clinic Name', 'Efficiency Visual', 'Rating Visual', 'Performance Score'],
-          ...dashboardData.topClinics.slice(0, 5).map((clinic, index) => {
-            const efficiency = clinic.efficiency || 0;
-            const rating = clinic.rating || 0;
-            const efficiencyBars = '█'.repeat(Math.min(Math.floor(efficiency / 5), 20));
-            const ratingStars = '★'.repeat(Math.min(Math.floor(rating), 5)) + '☆'.repeat(5 - Math.min(Math.floor(rating), 5));
-            const performanceScore = (efficiency + (rating * 20)) / 2;
-            
-            return [
-              index + 1,
-              clinic.name || 'Unknown Clinic',
-              `${efficiencyBars} ${efficiency.toFixed(1)}%`,
-              `${ratingStars} ${rating.toFixed(1)}`,
-              performanceScore.toFixed(1) + '/100'
-            ];
-          }),
+          ['CLINIC ACTIVITY'],
+          ['Clinic Activity Overview (Top 5 by appointments)'],
+          ['Rank', 'Clinic Name', 'Appointments', 'Patients', 'Doctors'],
+          ...dashboardData.topClinics.slice(0, 5).map((clinic, index) => [
+            index + 1,
+            clinic.name || 'Unknown Clinic',
+            clinic.appointmentCount || 0,
+            clinic.patientCount || 0,
+            clinic.doctorCount || 0
+          ]),
           [''],
           ['TREND ANALYSIS VISUALIZATION'],
           ['Monthly Growth Patterns'],
@@ -973,10 +872,8 @@ const ReportsAnalytics = () => {
         ['Appointment Booking Growth', `${(dashboardData.kpis.appointmentGrowth || 0).toFixed(2)}%`],
         [''],
         ['PERFORMANCE INDICATORS'],
-        ['Average Clinic Efficiency', dashboardData.topClinics.length > 0 ? 
-          `${(dashboardData.topClinics.reduce((sum, clinic) => sum + (clinic.efficiency || 0), 0) / dashboardData.topClinics.length).toFixed(1)}%` : 'N/A'],
-        ['Highest Performing Clinic', dashboardData.topClinics[0]?.name || 'N/A'],
-        ['Top Clinic Efficiency', dashboardData.topClinics[0] ? `${(dashboardData.topClinics[0].efficiency || 0).toFixed(1)}%` : 'N/A']
+        ['Most Active Clinic (appointments)', dashboardData.topClinics[0]?.name || 'N/A'],
+        ['Most Active Clinic Appointments', dashboardData.topClinics[0] ? (dashboardData.topClinics[0].appointmentCount || 0) : 'N/A']
       ];
       
       const systemSheet = XLSX.utils.aoa_to_sheet(systemData);
@@ -1011,12 +908,11 @@ const ReportsAnalytics = () => {
           item.doctorCount || 0
         ]),
         [''],
-        ['PERFORMANCE CHART DATA - Clinic Efficiency'],
-        ['Clinic', 'Efficiency %', 'Rating', 'Doctor Count', 'Patient Count'],
+        ['CLINIC ACTIVITY CHART DATA'],
+        ['Clinic', 'Appointments', 'Doctor Count', 'Patient Count'],
         ...dashboardData.topClinics.map(clinic => [
           clinic.name || 'Unknown',
-          (clinic.efficiency || 0).toFixed(2),
-          (clinic.rating || 0).toFixed(2),
+          clinic.appointmentCount || 0,
           clinic.doctorCount || 0,
           clinic.patientCount || 0
         ]),
@@ -1056,7 +952,7 @@ const ReportsAnalytics = () => {
         [''],
         ...(dashboardData.topClinics.slice(0, 3).map((clinic, index) => [
           `#${index + 1} ${clinic.name || 'Unknown'}`,
-          `Efficiency: ${(clinic.efficiency || 0).toFixed(1)}% | Rating: ${(clinic.rating || 0).toFixed(1)}/5`
+          `Appointments: ${clinic.appointmentCount || 0} | Patients: ${clinic.patientCount || 0}`
         ])),
         [''],
         ['📋 RECOMMENDATIONS'],
@@ -1103,7 +999,7 @@ const ReportsAnalytics = () => {
         visualElements: {
           barCharts: 'Unicode bar visualizations included',
           trendAnalysis: 'Monthly growth patterns with visual indicators',
-          performanceHeatmap: 'Clinic efficiency visual bars and star ratings',
+          performanceHeatmap: 'Clinic activity (appointments, patients, doctors)',
           distributionCharts: 'Percentage bars and market share analysis',
           healthIndicators: 'System status with visual progress bars',
           executiveSummary: 'Visual highlights with emoji indicators'
@@ -1499,9 +1395,9 @@ const ReportsAnalytics = () => {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-green-600">
-                      {(clinic.efficiency || 0).toFixed(1)}%
+                      {clinic.appointmentCount || 0}
                     </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Efficiency</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Appointments</p>
                   </div>
                 </div>
               ))}
@@ -1513,25 +1409,6 @@ const ReportsAnalytics = () => {
           )}
         </div>
 
-        {/* Debug Info */}
-        <div className="bg-gray-50 dark:bg-black rounded-lg p-4">
-          <h3 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">
-            Debug Information
-          </h3>
-          <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-            <p>
-              <strong>User Role:</strong> {user?.role || "Not logged in"}
-            </p>
-            <p>
-              <strong>Data Loaded:</strong>{" "}
-              {Object.keys(dashboardData.kpis).length > 0 ? "Yes" : "No"}
-            </p>
-            <p>
-              <strong>Mock Data:</strong>{" "}
-              {dashboardData.kpis.totalDoctors > 0 ? "Loaded" : "Not loaded"}
-            </p>
-          </div>
-        </div>
       </div>
     );
   } catch (renderError) {

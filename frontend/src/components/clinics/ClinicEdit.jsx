@@ -167,8 +167,14 @@ const ClinicEdit = () => {
       errors.adminUsername = "Admin Username is required";
     if (!form.adminPassword)
       errors.adminPassword = "Admin Password is required";
-    else if (form.adminPassword.length < 6)
-      errors.adminPassword = "Password must be at least 6 characters";
+    // Same rule as the backend (min 8 chars, a letter and a digit)
+    else if (
+      form.adminPassword.length < 8 ||
+      !/[a-zA-Z]/.test(form.adminPassword) ||
+      !/[0-9]/.test(form.adminPassword)
+    )
+      errors.adminPassword =
+        "Password must be at least 8 characters and contain a letter and a digit";
     
     // Legal & Compliance validation - only validate if fields are provided
     if (form.gstNumber && form.gstNumber.length > 0 && form.gstNumber.length !== 15)

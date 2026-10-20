@@ -366,9 +366,32 @@ const Clinics = () => {
                     errors.adminUsername = "Admin Username is required";
                   if (!form.adminPassword)
                     errors.adminPassword = "Admin Password is required";
-                  else if (form.adminPassword.length < 8)
+                  else if (
+                    form.adminPassword.length < 8 ||
+                    !/[a-zA-Z]/.test(form.adminPassword) ||
+                    !/[0-9]/.test(form.adminPassword)
+                  )
                     errors.adminPassword =
-                      "Password must be at least 8 characters";
+                      "Password must be at least 8 characters and contain a letter and a digit";
+
+                  // Additional users become clinic admin accounts of this
+                  // clinic (created by the backend in the same transaction).
+                  // Rows left completely empty are ignored.
+                  const filledAdditionalUsers = additionalUsers.filter(
+                    (u) => u.name || u.email || u.phone || u.password
+                  );
+                  filledAdditionalUsers.forEach((u, i) => {
+                    if (
+                      !u.name?.trim() ||
+                      !/^\S+@\S+\.\S+$/.test(u.email || "") ||
+                      (u.password || "").length < 8 ||
+                      !/[a-zA-Z]/.test(u.password || "") ||
+                      !/[0-9]/.test(u.password || "")
+                    ) {
+                      errors[`additionalUser${i}`] =
+                        `Additional user ${i + 1}: name, valid email and a password of 8+ characters with a letter and a digit are required`;
+                    }
+                  });
 
                   // Legal & Compliance validation
                   if (form.gstNumber && form.gstNumber.length !== 15)
@@ -409,13 +432,18 @@ const Clinics = () => {
                   setFormErrors(errors);
                   if (Object.keys(errors).length > 0) {
                     console.error("Form validation errors:", errors);
-                    toast.error("Please fill all required fields correctly");
+                    const userErrorKey = Object.keys(errors).find((k) =>
+                      k.startsWith("additionalUser")
+                    );
+                    toast.error(
+                      userErrorKey
+                        ? errors[userErrorKey]
+                        : "Please fill all required fields correctly"
+                    );
                     return;
                   }
 
                   setSaving(true);
-                  const clinicId =
-                    "UKGW" + Math.floor(100 + Math.random() * 900);
 
                   // Format the payload to match backend expectations
                   const payload = {
@@ -476,11 +504,11 @@ const Clinics = () => {
                       duration: parseInt(form.validityDuration) || 12,
                     },
 
-                    // Clinic ID
-                    clinicId: clinicId,
+                    // Clinic code ("UKGW" + 6 random chars) is generated
+                    // server-side and checked for uniqueness there.
 
-                    // Additional Users
-                    additionalUsers: additionalUsers.map((user) => ({
+                    // Additional Users (extra clinic admin logins)
+                    additionalUsers: filledAdditionalUsers.map((user) => ({
                       name: user.name,
                       phone: user.phone,
                       email: user.email,
@@ -1044,9 +1072,14 @@ const Clinics = () => {
                 {/* Additional Users Section */}
                 <div className="mt-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h4 className="text-md font-medium text-gray-900 dark:text-white">
-                      Additional Users
-                    </h4>
+                    <div>
+                      <h4 className="text-md font-medium text-gray-900 dark:text-white">
+                        Additional Users
+                      </h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Each user gets a clinic admin login for this clinic (password: 8+ characters with a letter and a digit).
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {

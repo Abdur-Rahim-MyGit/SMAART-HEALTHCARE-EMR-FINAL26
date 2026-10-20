@@ -115,14 +115,6 @@ export const SearchProvider = ({ children }) => {
           path: '/pharmacy', 
           category: 'Pharmacy',
           keywords: ['pharmacy', 'medications', 'drugs', 'prescriptions', 'medicine']
-        },
-        { 
-          id: 'support', 
-          title: 'Customer Support', 
-          description: 'Help and support center', 
-          path: '/support', 
-          category: 'Support',
-          keywords: ['support', 'help', 'customer service', 'assistance']
         }
       ],
       clinic_admin: [
