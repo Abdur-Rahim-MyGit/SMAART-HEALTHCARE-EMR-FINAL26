@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { patientsAPI, doctorsAPI } from "../../services/api";
+import { prescriptionsAPI, doctorsAPI } from "../../services/api";
 import { toast } from "react-hot-toast";
 import {
   Search,
@@ -15,23 +15,33 @@ import {
   Eye,
   Edit,
   Plus,
-  Download,
   Clock,
   AlertCircle,
   CheckCircle,
   UserCheck,
 } from "lucide-react";
 
+// Backend statuses are "Active" | "Completed" | "Cancelled".
+const statusKey = (p) => String(p?.status || "").toLowerCase();
+
+// patientId / doctorId are populated refs ({ fullName, ... }) or null.
+const personName = (ref) =>
+  ref?.fullName ||
+  [ref?.firstName, ref?.lastName].filter(Boolean).join(" ") ||
+  "—";
+
+const formatDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
+
 const PrescriptionManagement = () => {
   const { user } = useAuth();
   const [prescriptions, setPrescriptions] = useState([]);
-  const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     totalPrescriptions: 0,
     activePrescriptions: 0,
-    expiredPrescriptions: 0,
+    cancelledPrescriptions: 0,
     completedPrescriptions: 0,
   });
 
@@ -40,166 +50,45 @@ const PrescriptionManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPrescription, setSelectedPrescription] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
-  // Sample prescription data (since there's no API yet)
-  const samplePrescriptions = [
-    {
-      _id: "1",
-      prescriptionNumber: "RX001",
-      patientId: {
-        _id: "p1",
-        firstName: "John",
-        lastName: "Doe",
-        phone: "123-456-7890",
-        age: 45,
-      },
-      doctorId: {
-        _id: "d1",
-        firstName: "Dr. Smith",
-        lastName: "Johnson",
-        specialization: "General Medicine",
-      },
-      medications: [
-        {
-          name: "Amoxicillin",
-          dosage: "500mg",
-          frequency: "3 times daily",
-          duration: "7 days",
-          instructions: "Take with food",
-        },
-        {
-          name: "Paracetamol",
-          dosage: "650mg",
-          frequency: "As needed",
-          duration: "5 days",
-          instructions: "For fever and pain",
-        },
-      ],
-      diagnosis: "Upper Respiratory Infection",
-      notes: "Patient shows improvement. Continue medication as prescribed.",
-      status: "active",
-      issuedDate: "2025-10-15",
-      expiryDate: "2025-10-22",
-      clinicId: user?.clinicId,
-    },
-    {
-      _id: "2",
-      prescriptionNumber: "RX002",
-      patientId: {
-        _id: "p2",
-        firstName: "Jane",
-        lastName: "Smith",
-        phone: "987-654-3210",
-        age: 32,
-      },
-      doctorId: {
-        _id: "d2",
-        firstName: "Dr. Maria",
-        lastName: "Garcia",
-        specialization: "Pediatrics",
-      },
-      medications: [
-        {
-          name: "Insulin",
-          dosage: "10 units",
-          frequency: "Before meals",
-          duration: "Ongoing",
-          instructions: "Monitor blood sugar levels",
-        },
-      ],
-      diagnosis: "Type 1 Diabetes",
-      notes:
-        "Regular follow-up required. Patient education on insulin management.",
-      status: "active",
-      issuedDate: "2025-10-10",
-      expiryDate: "2025-11-10",
-      clinicId: user?.clinicId,
-    },
-  ];
 
   useEffect(() => {
     fetchData();
-    fetchPatients();
     fetchDoctors();
   }, []);
 
+  // Prescriptions are clinic-scoped by the backend (tenantScope), so a clinic admin
+  // only ever receives their own clinic's records.
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // For now, use sample data since there's no prescription API
-      // Filter by clinic if user is clinic admin
-      let prescriptionData = samplePrescriptions;
-      if (user?.role === "clinic_admin" && user?.clinicId) {
-        prescriptionData = samplePrescriptions.filter(
-          (prescription) => prescription.clinicId === user.clinicId
-        );
-      }
+      const res = await prescriptionsAPI.getAll({ limit: 200 });
+      const prescriptionData = res?.data?.prescriptions || res?.data?.data || [];
 
       setPrescriptions(prescriptionData);
 
-      // Calculate stats
-      const active = prescriptionData.filter(
-        (p) => p.status === "active"
-      ).length;
-      const expired = prescriptionData.filter(
-        (p) => new Date(p.expiryDate) < new Date()
-      ).length;
-      const completed = prescriptionData.filter(
-        (p) => p.status === "completed"
-      ).length;
-
+      const byStatus = (s) =>
+        prescriptionData.filter((p) => statusKey(p) === s).length;
       setStats({
-        totalPrescriptions: prescriptionData.length,
-        activePrescriptions: active,
-        expiredPrescriptions: expired,
-        completedPrescriptions: completed,
+        totalPrescriptions:
+          res?.data?.pagination?.total ?? prescriptionData.length,
+        activePrescriptions: byStatus("active"),
+        cancelledPrescriptions: byStatus("cancelled"),
+        completedPrescriptions: byStatus("completed"),
       });
     } catch (err) {
       console.error("Error fetching prescriptions:", err);
+      setError("Failed to load prescriptions");
       toast.error("Failed to fetch prescriptions");
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchPatients = async () => {
-    try {
-      const res = await patientsAPI.getAll();
-      let patientsData = [];
-      if (res?.data?.success && res.data.patients)
-        patientsData = res.data.patients;
-      else if (Array.isArray(res?.data)) patientsData = res.data;
-
-      // Filter by clinic if user is clinic admin
-      if (user?.role === "clinic_admin" && user?.clinicId) {
-        patientsData = patientsData.filter(
-          (patient) => patient.clinicId === user.clinicId
-        );
-      }
-
-      setPatients(patientsData || []);
-    } catch (e) {
-      console.error("Error fetching patients:", e);
-    }
-  };
-
   const fetchDoctors = async () => {
     try {
       const res = await doctorsAPI.getAll();
-      let doctorsData = [];
-      if (res?.data?.success && res.data.doctors)
-        doctorsData = res.data.doctors;
-      else if (Array.isArray(res?.data)) doctorsData = res.data;
-
-      // Filter by clinic if user is clinic admin
-      if (user?.role === "clinic_admin" && user?.clinicId) {
-        doctorsData = doctorsData.filter(
-          (doctor) => doctor.clinicId === user.clinicId
-        );
-      }
-
-      setDoctors(doctorsData || []);
+      setDoctors(res?.data?.doctors || res?.data?.data || []);
     } catch (e) {
       console.error("Error fetching doctors:", e);
     }
@@ -211,31 +100,26 @@ const PrescriptionManagement = () => {
 
     // Apply status filter
     if (filterStatus !== "all") {
-      if (filterStatus === "expired") {
-        list = list.filter((p) => new Date(p.expiryDate) < new Date());
-      } else {
-        list = list.filter((p) => p.status === filterStatus);
-      }
+      list = list.filter((p) => statusKey(p) === filterStatus);
     }
 
     // Apply doctor filter
     if (filterDoctor !== "all") {
-      list = list.filter((p) => p.doctorId._id === filterDoctor);
+      list = list.filter((p) => p.doctorId?._id === filterDoctor);
     }
 
     // Apply search filter
     if (searchTerm && searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase().trim();
       list = list.filter((prescription) => {
-        const patientName =
-          `${prescription.patientId.firstName} ${prescription.patientId.lastName}`.toLowerCase();
-        const doctorName =
-          `${prescription.doctorId.firstName} ${prescription.doctorId.lastName}`.toLowerCase();
-        const prescriptionNumber =
-          prescription.prescriptionNumber.toLowerCase();
+        const patientName = personName(prescription.patientId).toLowerCase();
+        const doctorName = personName(prescription.doctorId).toLowerCase();
+        const prescriptionNumber = (
+          prescription.prescriptionNumber || ""
+        ).toLowerCase();
         const diagnosis = prescription.diagnosis?.toLowerCase() || "";
-        const medications = prescription.medications
-          .map((m) => m.name.toLowerCase())
+        const medications = (prescription.medications || [])
+          .map((m) => (m.name || "").toLowerCase())
           .join(" ");
 
         return (
@@ -259,10 +143,7 @@ const PrescriptionManagement = () => {
 
   // Get status color
   const getStatusColor = (prescription) => {
-    if (new Date(prescription.expiryDate) < new Date()) {
-      return "bg-red-100 text-red-800";
-    }
-    switch (prescription.status) {
+    switch (statusKey(prescription)) {
       case "active":
         return "bg-green-100 text-green-800";
       case "completed":
@@ -275,14 +156,7 @@ const PrescriptionManagement = () => {
   };
 
   // Get status text
-  const getStatusText = (prescription) => {
-    if (new Date(prescription.expiryDate) < new Date()) {
-      return "Expired";
-    }
-    return (
-      prescription.status.charAt(0).toUpperCase() + prescription.status.slice(1)
-    );
-  };
+  const getStatusText = (prescription) => prescription.status || "Unknown";
 
   if (loading) {
     return (
@@ -326,15 +200,11 @@ const PrescriptionManagement = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Issue Date:</span>
-                      <span>
-                        {new Date(prescription.issuedDate).toLocaleDateString()}
-                      </span>
+                      <span>{formatDate(prescription.date)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="font-medium">Expiry Date:</span>
-                      <span>
-                        {new Date(prescription.expiryDate).toLocaleDateString()}
-                      </span>
+                      <span className="font-medium">Follow-up:</span>
+                      <span>{formatDate(prescription.followUpDate)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Status:</span>
@@ -360,14 +230,13 @@ const PrescriptionManagement = () => {
                     </div>
                     <div>
                       <p className="font-medium">
-                        {prescription.patientId.firstName}{" "}
-                        {prescription.patientId.lastName}
+                        {personName(prescription.patientId)}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Age: {prescription.patientId.age}
+                        Age: {prescription.patientId?.age ?? "—"}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {prescription.patientId.phone}
+                        {prescription.patientId?.phone}
                       </p>
                     </div>
                   </div>
@@ -384,11 +253,10 @@ const PrescriptionManagement = () => {
                     </div>
                     <div>
                       <p className="font-medium">
-                        {prescription.doctorId.firstName}{" "}
-                        {prescription.doctorId.lastName}
+                        {personName(prescription.doctorId)}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {prescription.doctorId.specialization}
+                        {prescription.doctorId?.specialization}
                       </p>
                     </div>
                   </div>
@@ -404,7 +272,7 @@ const PrescriptionManagement = () => {
                   </h4>
                   <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg">
                     <p className="text-gray-800 dark:text-gray-200">
-                      {prescription.diagnosis}
+                      {prescription.diagnosis || "—"}
                     </p>
                   </div>
                 </div>
@@ -415,7 +283,7 @@ const PrescriptionManagement = () => {
                     Medications
                   </h4>
                   <div className="space-y-3">
-                    {prescription.medications.map((med, index) => (
+                    {(prescription.medications || []).map((med, index) => (
                       <div
                         key={index}
                         className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg"
@@ -469,10 +337,6 @@ const PrescriptionManagement = () => {
                 className="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:bg-black dark:hover:bg-gray-900 dark:bg-gray-900"
               >
                 Close
-              </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-700 flex items-center">
-                <Download className="h-4 w-4 mr-2" />
-                Download PDF
               </button>
             </div>
           </div>
@@ -535,10 +399,10 @@ const PrescriptionManagement = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Expired
+                Cancelled
               </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.expiredPrescriptions}
+                {stats.cancelledPrescriptions}
               </p>
             </div>
           </div>
@@ -598,7 +462,7 @@ const PrescriptionManagement = () => {
               <option value="all">All Doctors</option>
               {doctors.map((doctor) => (
                 <option key={doctor._id} value={doctor._id}>
-                  {doctor.firstName} {doctor.lastName}
+                  {personName(doctor)}
                 </option>
               ))}
             </select>
@@ -614,7 +478,6 @@ const PrescriptionManagement = () => {
               <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="completed">Completed</option>
-              <option value="expired">Expired</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
@@ -687,25 +550,23 @@ const PrescriptionManagement = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {prescription.patientId.firstName}{" "}
-                      {prescription.patientId.lastName}
+                      {personName(prescription.patientId)}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Age: {prescription.patientId.age}
+                      Age: {prescription.patientId?.age ?? "—"}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {prescription.doctorId.firstName}{" "}
-                      {prescription.doctorId.lastName}
+                      {personName(prescription.doctorId)}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {prescription.doctorId.specialization}
+                      {prescription.doctorId?.specialization}
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900 dark:text-white">
-                      {prescription.medications
+                      {(prescription.medications || [])
                         .slice(0, 2)
                         .map((med, index) => (
                           <div key={index} className="flex items-center mb-1">
@@ -715,7 +576,7 @@ const PrescriptionManagement = () => {
                             </span>
                           </div>
                         ))}
-                      {prescription.medications.length > 2 && (
+                      {(prescription.medications || []).length > 2 && (
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           +{prescription.medications.length - 2} more
                         </div>
@@ -735,18 +596,12 @@ const PrescriptionManagement = () => {
                     <div className="flex items-center">
                       <Calendar className="h-4 w-4 mr-1" />
                       <div>
-                        <div>
-                          Issued:{" "}
-                          {new Date(
-                            prescription.issuedDate
-                          ).toLocaleDateString()}
-                        </div>
-                        <div>
-                          Expires:{" "}
-                          {new Date(
-                            prescription.expiryDate
-                          ).toLocaleDateString()}
-                        </div>
+                        <div>Issued: {formatDate(prescription.date)}</div>
+                        {prescription.followUpDate && (
+                          <div>
+                            Follow-up: {formatDate(prescription.followUpDate)}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -765,7 +620,7 @@ const PrescriptionManagement = () => {
             <p className="text-gray-500 dark:text-gray-400">
               {searchTerm || filterDoctor !== "all" || filterStatus !== "all"
                 ? "Try adjusting your search or filter criteria."
-                : "No prescriptions available."}
+                : error || "No prescriptions available."}
             </p>
           </div>
         )}

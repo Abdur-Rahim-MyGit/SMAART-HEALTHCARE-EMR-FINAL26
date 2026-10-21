@@ -9,8 +9,6 @@ import LogoutAnimation from "./components/loading/LogoutAnimation";
 
 // Auth Components
 import Login from "./components/auth/Login";
-import Register from "./components/auth/Register";
-import OTPVerification from "./components/auth/OTPVerification";
 import ForgotPassword from "./components/auth/ForgotPassword";
 import ResetPassword from "./components/auth/ResetPassword";
 
@@ -37,18 +35,12 @@ import ClinicEdit from "./components/clinics/ClinicEdit";
 import PharmacyManagement from "./components/pages/PharmacyManagement";
 import StaffManagement from "./components/pages/StaffManagement";
 import Settings from "./components/pages/Settings";
-import CustomerSupport from "./components/pages/CustomerSupport";
 import PatientView from "./components/pages/PatientView";
 
 function App() {
   const { user, loading, showLogoutAnimation, hideLogoutAnimation } = useAuth();
   const [showInitialLoading, setShowInitialLoading] = useState(false);
   const location = useLocation();
-
-  // Debug logging
-  console.log("App.jsx - Current user:", user);
-  console.log("App.jsx - Loading state:", loading);
-  console.log("App.jsx - Current pathname:", location.pathname);
 
   // Show initial loading screen only when on login page (not logged in)
   useEffect(() => {
@@ -103,8 +95,6 @@ function App() {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/verify-otp" element={<OTPVerification />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="*" element={<Navigate to="/login" />} />
@@ -114,7 +104,6 @@ function App() {
   }
 
   const getDashboardComponent = (role) => {
-    console.log("User role:", role); // Debug log
     switch (role) {
       case "super_master_admin":
         return <SuperMasterAdminDashboard />;
@@ -153,7 +142,6 @@ function App() {
             <Route path="/patients" element={<Patients />} />
             <Route path="/patients/:patientId" element={<PatientView />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/support" element={<CustomerSupport />} />
             <Route path="/clinic-edit" element={<ClinicEdit />} />
           </>
         )}

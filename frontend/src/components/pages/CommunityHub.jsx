@@ -6,7 +6,6 @@ import {
   Heart,
   Calendar,
   BookOpen,
-  Award,
   TrendingUp,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
@@ -256,14 +255,8 @@ const CommunityHub = () => {
                     No posts yet
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    Be the first to share something with the community!
+                    Community posts will appear here.
                   </p>
-                  <button
-                    className="btn-primary"
-                    onClick={() => toast.success("Create post feature coming soon!")}
-                  >
-                    Create First Post
-                  </button>
                 </div>
               ) : (
                 /* Community Posts */
@@ -326,10 +319,13 @@ const CommunityHub = () => {
                       />
                       <span className="text-sm">{post.likes}</span>
                     </button>
-                    <button className="flex items-center space-x-1 text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                    <span
+                      className="flex items-center space-x-1 text-gray-500 dark:text-gray-400"
+                      title="Comments"
+                    >
                       <MessageCircle className="w-4 h-4" />
                       <span className="text-sm">{post.commentCount}</span>
-                    </button>
+                    </span>
                   </div>
                 </div>
               ))}
@@ -381,28 +377,6 @@ const CommunityHub = () => {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Learning Modules
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  Continuing medical education courses
-                </p>
-                <div className="space-y-2">
-                  <button className="w-full flex items-center px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                    <Award className="w-4 h-4 mr-2" />
-                    CME Courses
-                  </button>
-                  <button className="w-full flex items-center px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                    <Award className="w-4 h-4 mr-2" />
-                    Certification Programs
-                  </button>
-                  <button className="w-full flex items-center px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                    <Award className="w-4 h-4 mr-2" />
-                    Webinar Series
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </div>

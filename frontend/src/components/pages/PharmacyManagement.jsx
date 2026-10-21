@@ -18,14 +18,30 @@ import {
   Clock,
   Calendar,
   User,
-  ShoppingCart,
   AlertTriangle,
   Zap,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { toast } from 'react-hot-toast'
 import { format, isToday, isTomorrow, isYesterday, parseISO } from 'date-fns'
-import { medicationsAPI } from '../../services/medicationAPI'
+import { pharmacyAPI, clinicsAPI } from '../../services/api'
+
+const emptyMedForm = {
+  name: '',
+  category: '',
+  stock: 0,
+  minStock: 0,
+  price: 0,
+  supplier: '',
+  expiryDate: '',
+}
+
+const isExpiringSoon = (med) => {
+  if (!med.expiryDate) return false
+  const expiry = new Date(med.expiryDate)
+  const today = new Date()
+  return expiry > today && expiry <= new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+}
 
 const PharmacyManagement = () => {
   const { user } = useAuth()
@@ -54,119 +70,108 @@ const PharmacyManagement = () => {
     categories: 0,
   })
 
-  // Mock data for demonstration
-  const mockMedications = [
-    {
-      _id: '1',
-      name: 'Paracetamol 500mg',
-      category: 'Pain Relief',
-      stock: 150,
-      minStock: 50,
-      expiryDate: '2025-12-15',
-      supplier: 'MediCorp',
-      price: 25,
-      status: 'inStock',
-    },
-    {
-      _id: '2',
-      name: 'Amoxicillin 250mg',
-      category: 'Antibiotic',
-      stock: 30,
-      minStock: 50,
-      expiryDate: '2025-08-20',
-      supplier: 'PharmaPlus',
-      price: 45,
-      status: 'lowStock',
-    },
-    {
-      _id: '3',
-      name: 'Insulin Glargine',
-      category: 'Diabetes',
-      stock: 0,
-      minStock: 20,
-      expiryDate: '2025-06-10',
-      supplier: 'DiabeticCare',
-      price: 1200,
-      status: 'outOfStock',
-    },
-    {
-      _id: '4',
-      name: 'Metformin 500mg',
-      category: 'Diabetes',
-      stock: 80,
-      minStock: 30,
-      expiryDate: '2025-03-15',
-      supplier: 'DiabeticCare',
-      price: 35,
-      status: 'expiringSoon',
-    },
-    {
-      _id: '5',
-      name: 'Omeprazole 20mg',
-      category: 'Gastrointestinal',
-      stock: 120,
-      minStock: 40,
-      expiryDate: '2025-11-30',
-      supplier: 'GutHealth',
-      price: 55,
-      status: 'inStock',
-    },
-  ]
+  const [error, setError] = useState(null)
+  // Super admin has no clinicId of their own: they pick a clinic to view.
+  const [clinics, setClinics] = useState([])
+  const [selectedClinicId, setSelectedClinicId] = useState(user?.clinicId || '')
+  const [showMedModal, setShowMedModal] = useState(false)
+  const [editingMed, setEditingMed] = useState(null)
+  const [medForm, setMedForm] = useState(emptyMedForm)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetchMedications()
+    if (user?.clinicId) return
+    clinicsAPI
+      .getAll()
+      .then((res) => {
+        const list = res?.data?.clinics || []
+        setClinics(list)
+        if (list.length && !selectedClinicId) setSelectedClinicId(list[0]._id || list[0].id)
+        if (!list.length) setLoading(false)
+      })
+      .catch((err) => {
+        console.error('Error fetching clinics:', err)
+        setError('Failed to load clinics')
+        setLoading(false)
+      })
   }, [])
 
+  useEffect(() => {
+    if (selectedClinicId) fetchMedications()
+  }, [selectedClinicId])
+
   const fetchMedications = async () => {
+    if (!selectedClinicId) return
     setLoading(true)
+    setError(null)
     try {
-      if (user?.clinicId) {
-        const response = await medicationsAPI.getAll(user.clinicId, {
-          search: searchTerm,
-          status: statusFilter,
-          sortBy: sortBy,
-          ...filters
-        })
-        
-        if (response.success) {
-          setMedications(response.medications)
-          calculateStats(response.medications)
-        } else {
-          // Fallback to mock data if API fails
-          console.warn('API failed, using mock data:', response.error)
-          setMedications(mockMedications)
-          calculateStats(mockMedications)
-          toast.error(response.error || 'Failed to fetch medications')
-        }
-      } else {
-        // Use mock data if no clinic ID
-        setMedications(mockMedications)
-        calculateStats(mockMedications)
-      }
-    } catch (error) {
-      console.error('Error fetching medications:', error)
-      // Fallback to mock data
-      setMedications(mockMedications)
-      calculateStats(mockMedications)
+      // Filtering and sorting happen client-side below.
+      const response = await pharmacyAPI.getByClinic(selectedClinicId, { limit: 1000 })
+      const meds = response?.data?.medications || []
+      setMedications(meds)
+      calculateStats(meds)
+    } catch (err) {
+      console.error('Error fetching medications:', err)
+      setMedications([])
+      calculateStats([])
+      setError(err.response?.data?.message || 'Failed to fetch medications')
       toast.error('Failed to fetch medications')
     } finally {
       setLoading(false)
     }
   }
 
-  const calculateStats = (medicationsData) => {
-    const today = new Date()
-    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const openMedModal = (med = null) => {
+    setEditingMed(med)
+    setMedForm(
+      med
+        ? {
+            name: med.name || '',
+            category: med.category || '',
+            stock: med.stock ?? 0,
+            minStock: med.minStock ?? 0,
+            price: med.price ?? 0,
+            supplier: med.supplier || '',
+            expiryDate: med.expiryDate ? format(new Date(med.expiryDate), 'yyyy-MM-dd') : '',
+          }
+        : emptyMedForm
+    )
+    setShowMedModal(true)
+  }
 
+  const saveMedication = async (e) => {
+    e.preventDefault()
+    if (!medForm.name.trim()) {
+      toast.error('Name is required')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload = { ...medForm, name: medForm.name.trim() }
+      if (editingMed) {
+        await pharmacyAPI.update(editingMed._id, payload)
+        toast.success('Medication updated')
+      } else {
+        await pharmacyAPI.create({ ...payload, clinicId: selectedClinicId })
+        toast.success('Medication added')
+      }
+      setShowMedModal(false)
+      fetchMedications()
+    } catch (err) {
+      console.error('Error saving medication:', err)
+      toast.error(err.response?.data?.message || 'Failed to save medication')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const calculateStats = (medicationsData) => {
     const stats = {
       total: medicationsData.length,
       inStock: medicationsData.filter((med) => med.status === 'inStock').length,
       lowStock: medicationsData.filter((med) => med.status === 'lowStock').length,
       outOfStock: medicationsData.filter((med) => med.status === 'outOfStock').length,
-      expiringSoon: medicationsData.filter((med) => {
-        const expiryDate = new Date(med.expiryDate)
-        return expiryDate <= thirtyDaysFromNow && expiryDate > today
-      }).length,
+      expiringSoon: medicationsData.filter(isExpiringSoon).length,
       totalValue: medicationsData.reduce((sum, med) => sum + (med.stock * med.price), 0),
       categories: [...new Set(medicationsData.map((med) => med.category))].length,
     }
@@ -181,7 +186,9 @@ const PharmacyManagement = () => {
       medication.supplier?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       medication.status?.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus = statusFilter === '' || medication.status === statusFilter
+    const matchesStatus =
+      statusFilter === '' ||
+      (statusFilter === 'expiringSoon' ? isExpiringSoon(medication) : medication.status === statusFilter)
 
     // Enhanced individual field filters
     const matchesMedicationName =
@@ -210,7 +217,8 @@ const PharmacyManagement = () => {
 
     const matchesExpiryDate =
       !filters.expiryDate ||
-      new Date(medication.expiryDate).toISOString().split('T')[0] === filters.expiryDate
+      (medication.expiryDate &&
+        new Date(medication.expiryDate).toISOString().split('T')[0] === filters.expiryDate)
 
     const matchesSupplier =
       !filters.supplier ||
@@ -257,6 +265,7 @@ const PharmacyManagement = () => {
       lowStock: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
       outOfStock: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
       expiringSoon: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+      expired: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     }
     return colors[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
   }
@@ -272,6 +281,7 @@ const PharmacyManagement = () => {
   }
 
   const formatMedicationDate = (date) => {
+    if (!date) return '—'
     const medicationDate = new Date(date)
     if (isToday(medicationDate)) {
       return 'Today'
@@ -309,23 +319,6 @@ const PharmacyManagement = () => {
 
   return (
     <div className="space-y-6">
-      {/* Work Under Progress Banner */}
-      <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/30 rounded-xl p-4 mb-6">
-        <div className="flex items-center">
-          <div className="flex-shrink-0">
-            <AlertTriangle className="h-6 w-6 text-orange-500 dark:text-orange-400" />
-          </div>
-          <div className="ml-3">
-            <h3 className="text-lg font-semibold text-orange-900 dark:text-orange-200">
-              Work Under Progress
-            </h3>
-            <p className="text-orange-700 dark:text-orange-300 text-sm">
-              This feature is currently being developed and will be available soon.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Header */}
       <div className="bg-gradient-to-r from-[#e6f0ff] to-[#e6f7f5] dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -345,8 +338,23 @@ const PharmacyManagement = () => {
               <Activity className="h-4 w-4 mr-2" />
               Refresh Data
             </button>
-            {(user.role === 'super_master_admin' || user.role === 'clinic_admin') && (
-              <button className="bg-gradient-to-r from-[#004D99] to-[#42A89B] text-white dark:text-gray-100 py-2 px-4 rounded-lg text-sm font-medium hover:from-[#003d80] hover:to-[#3a7d92] transition-all flex items-center shadow-lg dark:shadow-gray-900">
+            {!user?.clinicId && (
+              <select
+                value={selectedClinicId}
+                onChange={(e) => setSelectedClinicId(e.target.value)}
+                className="py-2 px-3 rounded-lg text-sm border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                aria-label="Select clinic"
+              >
+                {clinics.length === 0 && <option value="">No clinics</option>}
+                {clinics.map((c) => (
+                  <option key={c._id || c.id} value={c._id || c.id}>
+                    {c.name || 'Unnamed Clinic'}
+                  </option>
+                ))}
+              </select>
+            )}
+            {(user.role === 'super_master_admin' || user.role === 'clinic_admin') && selectedClinicId && (
+              <button onClick={() => openMedModal()} className="bg-gradient-to-r from-[#004D99] to-[#42A89B] text-white dark:text-gray-100 py-2 px-4 rounded-lg text-sm font-medium hover:from-[#003d80] hover:to-[#3a7d92] transition-all flex items-center shadow-lg dark:shadow-gray-900">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Medication
               </button>
@@ -792,7 +800,7 @@ const PharmacyManagement = () => {
                         {formatMedicationDate(medication.expiryDate)}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {format(new Date(medication.expiryDate), 'yyyy-MM-dd')}
+                        {medication.expiryDate ? format(new Date(medication.expiryDate), 'yyyy-MM-dd') : ''}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -809,13 +817,7 @@ const PharmacyManagement = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
-                        <button className="text-[#004D99] hover:text-[#003d80] transition-colors">
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button className="text-green-600 hover:text-green-800 transition-colors">
-                          <ShoppingCart className="h-4 w-4" />
-                        </button>
-                        <button className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 dark:text-gray-200 transition-colors">
+                        <button onClick={() => openMedModal(medication)} title="Edit medication" className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 dark:text-gray-200 transition-colors">
                           <Edit className="h-4 w-4" />
                         </button>
                       </div>
@@ -834,7 +836,11 @@ const PharmacyManagement = () => {
             </div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No medications found</h3>
             <p className="text-gray-500 dark:text-gray-400 mb-4">
-              {searchTerm || statusFilter
+              {error
+                ? error
+                : !selectedClinicId
+                ? 'Select a clinic to view its pharmacy inventory.'
+                : searchTerm || statusFilter
                 ? 'Try adjusting your search filters or clear all filters to see all medications.'
                 : 'No medications have been added yet. Add your first medication to get started.'}
             </p>
@@ -852,6 +858,64 @@ const PharmacyManagement = () => {
           </div>
         )}
       </div>
+
+      {showMedModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <form
+            onSubmit={saveMedication}
+            className="bg-white dark:bg-gray-950 rounded-xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                {editingMed ? 'Edit Medication' : 'Add Medication'}
+              </h2>
+              <button type="button" onClick={() => setShowMedModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">
+                ×
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                ['name', 'Name *', 'text'],
+                ['category', 'Category', 'text'],
+                ['stock', 'Stock (units)', 'number'],
+                ['minStock', 'Minimum stock', 'number'],
+                ['price', 'Price per unit (₹)', 'number'],
+                ['supplier', 'Supplier', 'text'],
+                ['expiryDate', 'Expiry date', 'date'],
+              ].map(([key, label, type]) => (
+                <div key={key} className={key === 'name' ? 'sm:col-span-2' : ''}>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
+                  <input
+                    type={type}
+                    min={type === 'number' ? 0 : undefined}
+                    step={key === 'price' ? '0.01' : undefined}
+                    required={key === 'name'}
+                    value={medForm[key]}
+                    onChange={(e) => setMedForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMedModal(false)}
+                className="px-4 py-2 text-sm border border-gray-200 dark:border-gray-800 rounded-lg text-gray-700 dark:text-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 text-sm bg-[#004D99] text-white rounded-lg hover:bg-[#003d80] disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : editingMed ? 'Save Changes' : 'Add Medication'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

@@ -47,7 +47,6 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const login = (userData, token) => {
-    console.log('AuthContext login called with:', { userData, token }); // Debug log
     localStorage.setItem('token', token)
     dispatch({ type: 'SET_USER', payload: userData })
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   Settings as SettingsIcon,
   Save,
@@ -8,8 +8,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Bell,
-  Shield,
   Database,
   Globe,
   Moon,
@@ -20,7 +18,7 @@ import {
 import { toast } from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
-import { usersAPI } from '../../services/api'
+import { usersAPI, authAPI } from '../../services/api'
 
 const Settings = () => {
   const { user } = useAuth()
@@ -39,36 +37,13 @@ const Settings = () => {
     confirmPassword: ''
   })
 
-  const [notificationSettings, setNotificationSettings] = useState({
-    emailNotifications: true,
-    appointmentReminders: true,
-    systemAlerts: true,
-    weeklyReports: false
-  })
-
-  const [securitySettings, setSecuritySettings] = useState({
-    twoFactorAuth: false,
-    sessionTimeout: 30,
-    loginAlerts: true
-  })
-
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'security', label: 'Security', icon: Shield },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'appearance', label: 'Appearance', icon: theme === 'dark' ? Moon : Sun }
   ]
 
   const handleProfileChange = (field, value) => {
     setProfileData(prev => ({ ...prev, [field]: value }))
-  }
-
-  const handleNotificationChange = (key) => {
-    setNotificationSettings(prev => ({ ...prev, [key]: !prev[key] }))
-  }
-
-  const handleSecurityChange = (key, value) => {
-    setSecuritySettings(prev => ({ ...prev, [key]: value }))
   }
 
   const handleSaveProfile = async () => {
@@ -81,8 +56,14 @@ const Settings = () => {
           setLoading(false)
           return
         }
-        if (profileData.newPassword.length < 6) {
-          toast.error('Password must be at least 6 characters')
+        // Mirrors the backend rule (auth/change-password): 8+ chars, a letter and a digit.
+        if (profileData.newPassword.length < 8 || !/[a-zA-Z]/.test(profileData.newPassword) || !/[0-9]/.test(profileData.newPassword)) {
+          toast.error('Password must be at least 8 characters and contain a letter and a digit')
+          setLoading(false)
+          return
+        }
+        if (!profileData.currentPassword) {
+          toast.error('Enter your current password to change it')
           setLoading(false)
           return
         }
@@ -95,7 +76,20 @@ const Settings = () => {
         phone: profileData.phone
       })
 
-      toast.success('✅ Profile updated successfully!')
+      if (profileData.newPassword) {
+        try {
+          await authAPI.changePassword({
+            currentPassword: profileData.currentPassword,
+            newPassword: profileData.newPassword
+          })
+        } catch (pwError) {
+          toast.error(pwError.response?.data?.message || 'Profile saved, but the password could not be changed')
+          return
+        }
+        toast.success('✅ Profile and password updated successfully!')
+      } else {
+        toast.success('✅ Profile updated successfully!')
+      }
       
       // Clear password fields
       setProfileData(prev => ({
@@ -106,40 +100,11 @@ const Settings = () => {
       }))
     } catch (error) {
       console.error('Error updating profile:', error)
-      toast.error('Failed to update profile')
+      toast.error(error.response?.data?.message || 'Failed to update profile')
     } finally {
       setLoading(false)
     }
   }
-
-  const handleSaveSettings = async () => {
-    setLoading(true)
-    try {
-      // Save settings to backend or localStorage
-      localStorage.setItem('notificationSettings', JSON.stringify(notificationSettings))
-      localStorage.setItem('securitySettings', JSON.stringify(securitySettings))
-      
-      toast.success('✅ Settings saved successfully!')
-    } catch (error) {
-      console.error('Error saving settings:', error)
-      toast.error('Failed to save settings')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Load settings on mount
-  useEffect(() => {
-    const savedNotifications = localStorage.getItem('notificationSettings')
-    const savedSecurity = localStorage.getItem('securitySettings')
-    
-    if (savedNotifications) {
-      setNotificationSettings(JSON.parse(savedNotifications))
-    }
-    if (savedSecurity) {
-      setSecuritySettings(JSON.parse(savedSecurity))
-    }
-  }, [])
 
   return (
     <div className="space-y-6 p-6">
@@ -293,162 +258,6 @@ const Settings = () => {
               <div className="flex justify-end">
                 <button
                   onClick={handleSaveProfile}
-                  disabled={loading}
-                  className="bg-[#004D99] text-white py-2 px-6 rounded-lg font-medium hover:bg-[#003d80] transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                  <Save className="h-4 w-4" />
-                  {loading ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Security Tab */}
-          {activeTab === 'security' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Security Settings
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Add an extra layer of security</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={securitySettings.twoFactorAuth}
-                        onChange={(e) => handleSecurityChange('twoFactorAuth', e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-gray-950 after:border-gray-300 dark:border-gray-700 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-700 peer-checked:bg-[#004D99]"></div>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">Login Alerts</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Get notified of new login attempts</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={securitySettings.loginAlerts}
-                        onChange={(e) => handleSecurityChange('loginAlerts', e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-gray-950 after:border-gray-300 dark:border-gray-700 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-700 peer-checked:bg-[#004D99]"></div>
-                    </label>
-                  </div>
-
-                  <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Session Timeout (minutes)
-                    </label>
-                    <input
-                      type="number"
-                      value={securitySettings.sessionTimeout}
-                      onChange={(e) => handleSecurityChange('sessionTimeout', parseInt(e.target.value))}
-                      min="5"
-                      max="120"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#004D99] focus:border-transparent dark:bg-gray-900 dark:text-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSaveSettings}
-                  disabled={loading}
-                  className="bg-[#004D99] text-white py-2 px-6 rounded-lg font-medium hover:bg-[#003d80] transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                  <Save className="h-4 w-4" />
-                  {loading ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Notifications Tab */}
-          {activeTab === 'notifications' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Notification Preferences
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">Email Notifications</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Receive updates via email</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notificationSettings.emailNotifications}
-                        onChange={() => handleNotificationChange('emailNotifications')}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-gray-950 after:border-gray-300 dark:border-gray-700 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-700 peer-checked:bg-[#004D99]"></div>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">Appointment Reminders</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Get reminded about upcoming appointments</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notificationSettings.appointmentReminders}
-                        onChange={() => handleNotificationChange('appointmentReminders')}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-gray-950 after:border-gray-300 dark:border-gray-700 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-700 peer-checked:bg-[#004D99]"></div>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">System Alerts</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Important system notifications</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notificationSettings.systemAlerts}
-                        onChange={() => handleNotificationChange('systemAlerts')}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-gray-950 after:border-gray-300 dark:border-gray-700 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-700 peer-checked:bg-[#004D99]"></div>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">Weekly Reports</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Receive weekly activity summaries</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notificationSettings.weeklyReports}
-                        onChange={() => handleNotificationChange('weeklyReports')}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-gray-950 after:border-gray-300 dark:border-gray-700 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-700 peer-checked:bg-[#004D99]"></div>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSaveSettings}
                   disabled={loading}
                   className="bg-[#004D99] text-white py-2 px-6 rounded-lg font-medium hover:bg-[#003d80] transition-colors flex items-center gap-2 disabled:opacity-50"
                 >

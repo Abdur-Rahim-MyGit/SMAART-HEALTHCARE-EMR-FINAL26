@@ -26,8 +26,6 @@ import { useNavigate } from "react-router-dom";
 import { patientsAPI, clinicsAPI } from "../../services/api";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
-import PatientModal from "./PatientModal";
-import PatientViewModal from "./PatientViewModal";
 
 const Patients = () => {
   const navigate = useNavigate();
@@ -36,10 +34,6 @@ const Patients = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClinic, setSelectedClinic] = useState("");
-  // removed Add Patient modal: patients are fetched from backend
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState(null);
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,31 +53,6 @@ const Patients = () => {
 
   // Advanced filters visibility
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: "",
-    dateOfBirth: "",
-    gender: "",
-    maritalStatus: false,
-    aadhaarNumber: "",
-    attenderEmail: "",
-    attenderMobile: "",
-    attenderWhatsapp: "",
-    city: "",
-    nationality: "",
-    pinCode: "",
-    modeOfCare: "",
-    bloodType: "",
-    emergencyContact: {
-      name: "",
-      relationship: "",
-      phone: "",
-    },
-    insuranceInfo: {
-      provider: "",
-      policyNumber: "",
-      groupNumber: "",
-    },
-  });
 
   useEffect(() => {
     fetchPatients();
@@ -827,147 +796,14 @@ const Patients = () => {
         )}
       </div>
 
-      {/* Add Patient modal removed: creation moved to registration flow or admin tools */}
-
-      {/* Edit Patient Modal */}
-      {showEditModal && selectedPatient && (
-        <PatientModal
-          isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false);
-            setSelectedPatient(null);
-          }}
-          onSave={handleUpdatePatient}
-          title="Edit Patient"
-          formData={formData}
-          setFormData={setFormData}
-          isEdit={true}
-        />
-      )}
-
-      {/* View Patient Modal - Kept for potential future use, but navigation is used instead */}
-      {/* {showViewModal && selectedPatient && (
-        <PatientViewModal
-          isOpen={showViewModal}
-          onClose={() => {
-            setShowViewModal(false);
-            setSelectedPatient(null);
-          }}
-          patient={selectedPatient}
-        />
-      )} */}
     </div>
   );
-
-  // CRUD Functions
-  async function handleAddPatient(patientData) {
-    try {
-      const response = await patientsAPI.create(patientData);
-      if (response.data.success) {
-        toast.success("Patient added successfully");
-        setPatients([response.data.patient, ...patients]);
-        setShowAddModal(false);
-        resetFormData();
-      }
-    } catch (error) {
-      toast.error("Failed to add patient");
-    }
-  }
-
-  async function handleUpdatePatient(patientData) {
-    try {
-      const response = await patientsAPI.update(
-        selectedPatient._id,
-        patientData
-      );
-      if (response.data.success) {
-        toast.success("Patient updated successfully");
-        fetchPatients();
-        setShowEditModal(false);
-        setSelectedPatient(null);
-        resetFormData();
-      }
-    } catch (error) {
-      toast.error("Failed to update patient");
-    }
-  }
-
-  async function handleDeletePatient(patientId) {
-    if (window.confirm("Are you sure you want to delete this patient?")) {
-      try {
-        const response = await patientsAPI.delete(patientId);
-        if (response.data.success) {
-          toast.success("Patient deleted successfully");
-          fetchPatients();
-        }
-      } catch (error) {
-        toast.error("Failed to delete patient");
-      }
-    }
-  }
 
   function handleViewPatient(patient) {
     // Navigate to the detailed PatientView page
     navigate(`/patients/${patient._id}`);
   }
 
-  function handleEditPatient(patient) {
-    setSelectedPatient(patient);
-    setFormData({
-      fullName: patient.fullName || "",
-      dateOfBirth: patient.dateOfBirth ? patient.dateOfBirth.split("T")[0] : "",
-      gender: patient.gender || "",
-      phone: patient.phone || "",
-      email: patient.email || "",
-      address: {
-        street: patient.address?.street || "",
-        city: patient.address?.city || "",
-        state: patient.address?.state || "",
-        zipCode: patient.address?.zipCode || "",
-        country: patient.address?.country || "India",
-      },
-      emergencyContact: {
-        name: patient.emergencyContact?.name || "",
-        relationship: patient.emergencyContact?.relationship || "",
-        phone: patient.emergencyContact?.phone || "",
-      },
-      medicalHistory: {
-        conditions: patient.medicalHistory?.conditions || [],
-        allergies: patient.medicalHistory?.allergies || [],
-        medications: patient.medicalHistory?.medications || [],
-      },
-      notes: patient.notes || "",
-    });
-    setShowEditModal(true);
-  }
-
-  const resetFormData = () => {
-    setFormData({
-      fullName: "",
-      dateOfBirth: "",
-      gender: "",
-      maritalStatus: false,
-      aadhaarNumber: "",
-      attenderEmail: "",
-      attenderMobile: "",
-      attenderWhatsapp: "",
-      city: "",
-      nationality: "",
-      pinCode: "",
-      modeOfCare: "",
-      bloodType: "",
-      emergencyContact: {
-        name: "",
-        relationship: "",
-        phone: "",
-      },
-      insuranceInfo: {
-        provider: "",
-        policyNumber: "",
-        groupNumber: "",
-      },
-    });
-  };
 };
 
 export default Patients;

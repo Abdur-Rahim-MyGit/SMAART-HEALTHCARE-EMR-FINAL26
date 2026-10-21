@@ -38,7 +38,7 @@ import {
   billingAPI,
   nursesAPI,
   patientsAPI,
-  caseLogAPI,
+  auditAPI,
   invoicesAPI,
   labReportsAPI,
 } from "../../services/api";
@@ -60,6 +60,22 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+
+// Load every page of invoices (the API caps a page at 200 rows) so totals are
+// computed over all invoices, not just the first page.
+const fetchAllInvoices = async (params = {}) => {
+  const PAGE_SIZE = 200;
+  const MAX_PAGES = 100;
+  const first = await invoicesAPI.getAll({ ...params, page: 1, limit: PAGE_SIZE });
+  if (!first?.data?.success) return null;
+  const rows = [...(first.data.invoices || first.data.data || [])];
+  const pages = Math.min(first.data.pagination?.pages || 1, MAX_PAGES);
+  for (let page = 2; page <= pages; page++) {
+    const next = await invoicesAPI.getAll({ ...params, page, limit: PAGE_SIZE });
+    rows.push(...(next?.data?.invoices || next?.data?.data || []));
+  }
+  return rows;
+};
 
 const SuperMasterAdminDashboard = () => {
   const navigate = useNavigate();
@@ -104,8 +120,10 @@ const SuperMasterAdminDashboard = () => {
   const [showCaseLogModal, setShowCaseLogModal] = useState(false);
   const [caseLogData, setCaseLogData] = useState([]);
   const [caseLogLoading, setCaseLogLoading] = useState(false);
-  const [activeSessions, setActiveSessions] = useState([]);
-  const [systemHealth, setSystemHealth] = useState({});
+  // Real platform health from GET /dashboard/system-health (null = unavailable)
+  const [platformHealth, setPlatformHealth] = useState(null);
+  // Latest audit-log entries for the "Recent Activity" panel
+  const [recentAudit, setRecentAudit] = useState([]);
 
   // Data states for each modal
   const [allClinics, setAllClinics] = useState([]);
@@ -129,7 +147,6 @@ const SuperMasterAdminDashboard = () => {
   const [revenueData, setRevenueData] = useState([]);
   const [departmentData, setDepartmentData] = useState([]);
   const [activityData, setActivityData] = useState([]);
-  const [realTimeData, setRealTimeData] = useState([]);
   const [chartsLoading, setChartsLoading] = useState(true);
   const [chartsError, setChartsError] = useState(null);
 
@@ -150,18 +167,23 @@ const SuperMasterAdminDashboard = () => {
       console.log("Fetching chart data...");
       
       // Fetch data for all charts in parallel
-      const [billingResponse, doctorsResponse, appointmentsResponse, systemHealthResponse, invoicesResponse] = await Promise.all([
-        billingAPI.getAll().catch(() => ({ data: { success: false } })),
-        doctorsAPI.getAll({ limit: 1000 }).catch(() => ({ data: { success: false } })),
+      const [doctorsResponse, appointmentsResponse, systemHealthResponse, invoicesResponse, auditResponse] = await Promise.all([
+        doctorsAPI.getAll({ limit: 500 }).catch(() => ({ data: { success: false } })),
         appointmentsAPI.getAll().catch(() => ({ data: { success: false } })),
         dashboardAPI.getSystemHealth().catch(() => ({ data: { success: false } })),
-        invoicesAPI.getAll().catch(() => ({ data: { success: false } }))
+        // Revenue = PAID invoices only, across all pages
+        fetchAllInvoices({ status: "Paid" })
+          .then((rows) => ({ data: { success: rows !== null, invoices: rows || [] } }))
+          .catch(() => ({ data: { success: false } })),
+        auditAPI.getAll({ limit: 5 }).catch(() => ({ data: { success: false } }))
       ]);
+
+      setPlatformHealth(systemHealthResponse.data.success ? systemHealthResponse.data.data || null : null);
+      setRecentAudit(auditResponse.data.success && Array.isArray(auditResponse.data.data) ? auditResponse.data.data : []);
       
-      // Process revenue data from all invoices (primary) or billing (fallback)
+      // Process revenue data from paid invoices
       let processedRevenueData = [];
       
-      // Try to use all invoices first
       if (invoicesResponse.data.success) {
         const invoicesData = invoicesResponse.data.invoices || invoicesResponse.data.data || invoicesResponse.data;
         if (Array.isArray(invoicesData)) {
@@ -203,48 +225,6 @@ const SuperMasterAdminDashboard = () => {
           
           console.log("Revenue chart data from all invoices:", invoicesData.length, "invoices");
         }
-      } else if (billingResponse.data.success) {
-        // Fallback to billing data if invoices not available
-        const billingData = billingResponse.data.billing || billingResponse.data;
-        if (Array.isArray(billingData)) {
-          // Group billing data by month for the last 8 months
-          const monthlyRevenue = {};
-          const monthlyAppointments = {};
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          
-          billingData.forEach(bill => {
-            const date = new Date(bill.date || bill.createdAt);
-            const monthKey = months[date.getMonth()];
-            const amount = bill.amount || bill.totalAmount || 0;
-            
-            if (!monthlyRevenue[monthKey]) {
-              monthlyRevenue[monthKey] = 0;
-              monthlyAppointments[monthKey] = 0;
-            }
-            monthlyRevenue[monthKey] += amount;
-            monthlyAppointments[monthKey] += 1;
-          });
-          
-          // Create chart data for last 8 months
-          const currentMonth = new Date().getMonth();
-          for (let i = 7; i >= 0; i--) {
-            const monthIndex = (currentMonth - i + 12) % 12;
-            const monthName = months[monthIndex];
-            const revenue = monthlyRevenue[monthName] || 0;
-            const appointments = monthlyAppointments[monthName] || 0;
-            const prevRevenue = i === 7 ? revenue : processedRevenueData[processedRevenueData.length - 1]?.revenue || 0;
-            const growth = prevRevenue > 0 ? Math.round(((revenue - prevRevenue) / prevRevenue) * 100) : 0;
-            
-            processedRevenueData.push({
-              month: monthName,
-              revenue: revenue,
-              appointments: appointments,
-              growth: growth
-            });
-          }
-          
-          console.log("Revenue chart data from billing (fallback):", billingData.length, "records");
-        }
       }
       
       // Fallback revenue data if no billing data
@@ -283,7 +263,7 @@ const SuperMasterAdminDashboard = () => {
               name: specialty,
               value: percentage,
               color: colors[colorIndex % colors.length],
-              patients: count * 15 // Estimate patients per doctor
+              doctors: count
             });
             colorIndex++;
           });
@@ -293,16 +273,6 @@ const SuperMasterAdminDashboard = () => {
             .sort((a, b) => b.value - a.value)
             .slice(0, 5);
         }
-      }
-      
-      // Fallback department data
-      if (processedDepartmentData.length === 0) {
-        processedDepartmentData = [
-          { name: "General Medicine", value: 40, color: "#4F46E5", patients: 0 },
-          { name: "Cardiology", value: 25, color: "#059669", patients: 0 },
-          { name: "Neurology", value: 20, color: "#DC2626", patients: 0 },
-          { name: "Pediatrics", value: 15, color: "#7C3AED", patients: 0 }
-        ];
       }
       
       // Process activity data from appointments
@@ -357,48 +327,15 @@ const SuperMasterAdminDashboard = () => {
         ];
       }
       
-      // Process real-time data from system health
-      let processedRealTimeData = [];
-      if (systemHealthResponse.data.success) {
-        const healthData = systemHealthResponse.data.data || {};
-        // Generate hourly data for the last 24 hours
-        for (let i = 23; i >= 0; i--) {
-          const hour = new Date(Date.now() - i * 60 * 60 * 1000).getHours();
-          const timeStr = hour.toString().padStart(2, '0') + ':00';
-          
-          processedRealTimeData.push({
-            time: timeStr,
-            activeUsers: Math.max(0, (healthData.activeUsers || 0) + Math.floor(Math.random() * 10 - 5)),
-            systemLoad: Math.max(0, Math.min(100, (healthData.systemLoad || 50) + Math.floor(Math.random() * 20 - 10)))
-          });
-        }
-      }
-      
-      // Fallback real-time data
-      if (processedRealTimeData.length === 0) {
-        for (let i = 23; i >= 0; i--) {
-          const hour = new Date(Date.now() - i * 60 * 60 * 1000).getHours();
-          const timeStr = hour.toString().padStart(2, '0') + ':00';
-          
-          processedRealTimeData.push({
-            time: timeStr,
-            activeUsers: Math.floor(Math.random() * 20),
-            systemLoad: Math.floor(Math.random() * 60 + 20)
-          });
-        }
-      }
-      
       // Update all chart data
       setRevenueData(processedRevenueData);
       setDepartmentData(processedDepartmentData);
       setActivityData(processedActivityData);
-      setRealTimeData(processedRealTimeData);
       
       console.log("Chart data loaded successfully");
       console.log("Revenue data points:", processedRevenueData.length);
       console.log("Department data points:", processedDepartmentData.length);
       console.log("Activity data points:", processedActivityData.length);
-      console.log("Real-time data points:", processedRealTimeData.length);
       
     } catch (error) {
       console.error("Error fetching chart data:", error);
@@ -437,7 +374,7 @@ const SuperMasterAdminDashboard = () => {
           usersAPI.getAll().catch(() => ({ data: { success: false } })),
           appointmentsAPI.getAll().catch(() => ({ data: { success: false } })),
           referralsAPI.getAll().catch(() => ({ data: { success: false } })),
-          doctorsAPI.getAll({ limit: 1000 }).catch(() => ({ data: { success: false } })),
+          doctorsAPI.getAll({ limit: 500 }).catch(() => ({ data: { success: false } })),
           billingAPI.getAll().catch(() => ({ data: { success: false } })),
           nursesAPI.getAll().catch(() => ({ data: { success: false } })),
           patientsAPI.getAll().catch(() => ({ data: { success: false } })),
@@ -529,49 +466,33 @@ const SuperMasterAdminDashboard = () => {
           console.log("Real referrals count:", newStats.totalReferrals);
         }
 
-        // Get real revenue data from all invoices (total amount)
+        // Revenue = PAID invoices only, across ALL invoices (server-side total),
+        // with the paid invoices loaded page by page for the detail modal.
         try {
-          const invoicesResponse = await invoicesAPI.getAll();
-          if (invoicesResponse.data.success) {
-            const invoicesData = invoicesResponse.data.invoices || invoicesResponse.data.data || invoicesResponse.data;
-            if (Array.isArray(invoicesData)) {
-              // Calculate total revenue from all invoices
-              newStats.totalRevenue = invoicesData.reduce((sum, invoice) => {
-                return sum + (invoice.total || invoice.amount || invoice.grandTotal || 0);
-              }, 0);
-              
-              setRevenueDetails(invoicesData.map(invoice => ({
-                _id: invoice._id,
-                source: `Invoice #${invoice.invoiceNo || invoice.invoiceNumber || 'N/A'}`,
-                amount: invoice.total || invoice.amount || invoice.grandTotal || 0,
-                date: invoice.date || invoice.createdAt,
-                clinic: invoice.clinicName || invoice.clinic?.name || "Unknown Clinic",
-                patientName: invoice.patientName || invoice.patient?.fullName || "Unknown Patient",
-                status: invoice.status || "Generated"
-              })));
-              
-              console.log("Total revenue from all invoices:", newStats.totalRevenue);
-              console.log("Total invoices:", invoicesData.length);
-            }
+          const [statsResponse, paidInvoices] = await Promise.all([
+            invoicesAPI.getStatsOverview().catch(() => ({ data: { success: false } })),
+            fetchAllInvoices({ status: "Paid" }).catch(() => null),
+          ]);
+          if (Array.isArray(paidInvoices)) {
+            newStats.totalRevenue = paidInvoices.reduce(
+              (sum, invoice) => sum + (Number(invoice.total ?? invoice.amount) || 0),
+              0
+            );
+            setRevenueDetails(paidInvoices.map(invoice => ({
+              _id: invoice._id,
+              source: `Invoice #${invoice.invoiceNo || invoice.invoiceNumber || 'N/A'}`,
+              amount: Number(invoice.total ?? invoice.amount) || 0,
+              date: invoice.date || invoice.createdAt,
+              clinic: invoice.clinicName || invoice.clinicId?.name || invoice.clinic?.name || "Unknown Clinic",
+              patientName: invoice.patientName || invoice.patient?.fullName || "Unknown Patient",
+              status: invoice.status
+            })));
+          }
+          if (statsResponse.data.success && statsResponse.data.data) {
+            newStats.totalRevenue = Number(statsResponse.data.data.totalRevenue) || 0;
           }
         } catch (invoiceError) {
-          console.log("Could not fetch invoices for revenue calculation, falling back to billing data:", invoiceError);
-          
-          // Fallback to billing data if invoices API fails
-          if (billingResponse.data.success) {
-            const billingData = billingResponse.data.billing || billingResponse.data;
-            if (Array.isArray(billingData)) {
-              newStats.totalRevenue = billingData.reduce((sum, item) => sum + (item.amount || item.totalAmount || 0), 0);
-              setRevenueDetails(billingData.map(item => ({
-                _id: item._id,
-                source: item.serviceType || item.description || "Service",
-                amount: item.amount || item.totalAmount || 0,
-                date: item.date || item.createdAt,
-                clinic: item.clinicName || "Clinic"
-              })));
-            }
-            console.log("Fallback revenue calculated from billing:", newStats.totalRevenue);
-          }
+          console.log("Could not fetch invoices for revenue calculation:", invoiceError);
         }
 
         // Get real lab tests count from LabReport model
@@ -785,9 +706,7 @@ const SuperMasterAdminDashboard = () => {
             }));
             setValue("totalUsers", usersCount);
             setValue("totalSuperMasterAdmins", superMasterAdminsCount);
-            setValue("totalDoctors", doctorsCount);
-
-            console.log("Fallback users count:", usersCount, "Super Master Admins:", superMasterAdminsCount, "Doctors:", doctorsCount);
+            console.log("Fallback users count:", usersCount, "Super Master Admins:", superMasterAdminsCount);
             
             // Additional direct count check in fallback
             try {
@@ -1100,101 +1019,38 @@ const SuperMasterAdminDashboard = () => {
     }
   };
 
+  // "Audit Log" modal: real entries from GET /audit (audit:read) plus the real
+  // platform health from GET /dashboard/system-health. No placeholder data.
   const handleViewCaseLog = async () => {
     setCaseLogLoading(true);
+    setShowCaseLogModal(true);
     try {
-      // Fetch system-wide activity data
-      const [activityResponse, sessionsResponse, healthResponse] = await Promise.all([
-        caseLogAPI.getSystemActivity({ limit: 50 }).catch(() => ({ data: { success: false } })),
-        caseLogAPI.getActiveSessions().catch(() => ({ data: { success: false } })),
-        caseLogAPI.getSystemHealth().catch(() => ({ data: { success: false } }))
+      const [auditResponse, healthResponse] = await Promise.all([
+        auditAPI.getAll({ limit: 50 }).catch(() => ({ data: { success: false } })),
+        dashboardAPI.getSystemHealth().catch(() => ({ data: { success: false } })),
       ]);
-
-      // Fetch real system activity data
-      let realActivityData = [];
-      let realActiveSessions = [];
-      let realSystemHealth = {};
-      
-      if (activityResponse.data.success) {
-        realActivityData = activityResponse.data.data || [];
+      if (healthResponse.data.success) setPlatformHealth(healthResponse.data.data || null);
+      if (auditResponse.data.success) {
+        setCaseLogData(Array.isArray(auditResponse.data.data) ? auditResponse.data.data : []);
+      } else {
+        setCaseLogData([]);
+        toast.error("Failed to load audit log");
       }
-      
-      if (sessionsResponse.data.success) {
-        realActiveSessions = sessionsResponse.data.data || [];
-      }
-      
-      if (healthResponse.data.success) {
-        realSystemHealth = healthResponse.data.data || {};
-      }
-      
-      // Fallback to mock data if no real data available
-      if (realActivityData.length === 0) {
-        realActivityData = [
-          {
-            _id: '1',
-            action: 'login',
-            user: 'Dr. John Smith',
-            role: 'doctor',
-            clinic: 'City Medical Center',
-            timestamp: new Date(Date.now() - 5 * 60 * 1000),
-            ipAddress: '192.168.1.100',
-            status: 'success'
-          },
-          {
-            _id: '2',
-            action: 'logout',
-            user: 'Nurse Sarah Johnson',
-            role: 'nurse',
-            clinic: 'City Medical Center',
-            timestamp: new Date(Date.now() - 12 * 60 * 1000),
-            ipAddress: '192.168.1.101',
-            status: 'success'
-          }
-        ];
-      }
-      
-      if (realActiveSessions.length === 0) {
-        realActiveSessions = [
-          {
-            _id: '1',
-            user: 'Dr. John Smith',
-            role: 'doctor',
-            clinic: 'City Medical Center',
-            loginTime: new Date(Date.now() - 5 * 60 * 1000),
-            ipAddress: '192.168.1.100',
-            lastActivity: new Date(Date.now() - 1 * 60 * 1000)
-          }
-        ];
-      }
-      
-      if (Object.keys(realSystemHealth).length === 0) {
-        realSystemHealth = {
-          totalUsers: stats.totalUsers || 0,
-          activeUsers: stats.activeUsers || 0,
-          totalSessions: 45,
-          activeSessions: realActiveSessions.length,
-          systemUptime: '99.9%',
-          lastBackup: new Date(Date.now() - 2 * 60 * 60 * 1000),
-          serverStatus: 'healthy',
-          databaseStatus: 'healthy'
-        };
-      }
-
-      setCaseLogData(realActivityData);
-      setActiveSessions(realActiveSessions);
-      setSystemHealth(realSystemHealth);
-      
-      toast.success("Case log data loaded successfully");
     } catch (error) {
-      console.error("Error fetching case log data:", error);
-      toast.error("Failed to load case log data");
+      console.error("Error fetching audit log:", error);
+      setCaseLogData([]);
+      toast.error("Failed to load audit log");
     } finally {
       setCaseLogLoading(false);
     }
-    setShowCaseLogModal(true);
   };
 
   const getActivityIcon = (action) => {
+    const a = String(action || '').toUpperCase();
+    if (a.includes('LOGOUT')) return LogOut;
+    if (a.includes('LOGIN')) return a.includes('FAIL') ? AlertCircle : LogIn;
+    if (a.startsWith('APPOINTMENT')) return Calendar;
+    if (a.startsWith('PATIENT')) return UserCheck;
     switch (action) {
       case 'login':
         return LogIn;
@@ -1212,7 +1068,7 @@ const SuperMasterAdminDashboard = () => {
   };
 
   const getActivityColor = (action, status) => {
-    if (status === 'failed') return 'text-red-500';
+    if (status && String(status).toUpperCase() !== 'SUCCESS') return 'text-red-500';
     switch (action) {
       case 'login':
         return 'text-green-500';
@@ -1229,7 +1085,7 @@ const SuperMasterAdminDashboard = () => {
 
   const formatTimeAgo = (timestamp) => {
     const now = new Date();
-    const diff = now - timestamp;
+    const diff = now - new Date(timestamp);
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
@@ -1318,63 +1174,57 @@ const SuperMasterAdminDashboard = () => {
     setShowReferralsModal(true);
   };
 
+  // Download through the authenticated axios client (bearer token + refresh);
+  // a plain window.open() carries no Authorization header and gets 401.
+  const handleDownloadLabReport = async (report) => {
+    try {
+      const response = await labReportsAPI.download(report._id);
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: response.headers?.["content-type"] || "application/octet-stream" });
+      const disposition = response.headers?.["content-disposition"] || "";
+      const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      const fileName = match ? decodeURIComponent(match[1]) : report.fileName || `${report.testName || "lab-report"}-${report._id}`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error("Error downloading lab report:", error);
+      toast.error("Failed to download lab report");
+    }
+  };
+
   const handleViewRevenue = async () => {
     if (revenueDetails.length === 0) {
       setRevenueLoading(true);
       try {
-        // Fetch all invoices for revenue data
-        const response = await invoicesAPI.getAll();
-        if (response.data.success) {
-          const invoicesData = response.data.invoices || response.data.data || response.data;
-          if (Array.isArray(invoicesData)) {
-            setRevenueDetails(invoicesData.map(invoice => ({
-              _id: invoice._id,
-              source: `Invoice #${invoice.invoiceNo || invoice.invoiceNumber || 'N/A'}`,
-              amount: invoice.total || invoice.amount || invoice.grandTotal || 0,
-              date: invoice.date || invoice.createdAt,
-              clinic: invoice.clinicName || invoice.clinic?.name || "Unknown Clinic",
-              patientName: invoice.patientName || invoice.patient?.fullName || "Unknown Patient",
-              status: invoice.status || "Generated",
-              invoiceNumber: invoice.invoiceNo || invoice.invoiceNumber,
-              paymentMethod: invoice.paymentMethod || "N/A"
-            })));
-            
-            if (invoicesData.length === 0) {
-              toast.info("No invoices found yet", { duration: 2000 });
-            } else {
-              toast.success(`Loaded ${invoicesData.length} invoices`, { duration: 2000 });
-            }
+        // Revenue = PAID invoices only, across all pages
+        const invoicesData = await fetchAllInvoices({ status: "Paid" });
+        if (Array.isArray(invoicesData)) {
+          setRevenueDetails(invoicesData.map(invoice => ({
+            _id: invoice._id,
+            source: `Invoice #${invoice.invoiceNo || invoice.invoiceNumber || 'N/A'}`,
+            amount: Number(invoice.total ?? invoice.amount) || 0,
+            date: invoice.date || invoice.createdAt,
+            clinic: invoice.clinicName || invoice.clinicId?.name || invoice.clinic?.name || "Unknown Clinic",
+            patientName: invoice.patientName || invoice.patient?.fullName || "Unknown Patient",
+            status: invoice.status,
+            invoiceNumber: invoice.invoiceNo || invoice.invoiceNumber,
+            paymentMethod: invoice.paymentMethod || "N/A"
+          })));
+          if (invoicesData.length === 0) {
+            toast("No paid invoices yet", { duration: 2000 });
           } else {
-            setRevenueDetails([]);
-            toast.info("No invoice data available", { duration: 2000 });
+            toast.success(`Loaded ${invoicesData.length} paid invoices`, { duration: 2000 });
           }
         } else {
-          // Fallback to billing API if invoices API fails
-          try {
-            const billingResponse = await billingAPI.getAll();
-            if (billingResponse.data.success) {
-              const billingData = billingResponse.data.billing || billingResponse.data;
-              if (Array.isArray(billingData)) {
-                setRevenueDetails(billingData.map(item => ({
-                  _id: item._id,
-                  source: item.serviceType || item.description || "Service",
-                  amount: item.amount || item.totalAmount || 0,
-                  date: item.date || item.createdAt,
-                  clinic: item.clinicName || "Clinic"
-                })));
-                toast.info("Showing billing data (invoices not available)", { duration: 2000 });
-              } else {
-                setRevenueDetails([]);
-                toast.info("No revenue data available yet", { duration: 2000 });
-              }
-            } else {
-              setRevenueDetails([]);
-              toast.info("No revenue data available yet", { duration: 2000 });
-            }
-          } catch (billingError) {
-            setRevenueDetails([]);
-            toast.info("Revenue tracking feature is being implemented", { duration: 2000 });
-          }
+          setRevenueDetails([]);
+          toast.error("Failed to load revenue data", { duration: 2000 });
         }
       } catch (error) {
         console.error("Error loading revenue:", error);
@@ -1595,7 +1445,7 @@ const SuperMasterAdminDashboard = () => {
             >
               <div className="w-2 h-2 bg-green-50 dark:bg-green-900/200 rounded-full animate-pulse"></div>
               <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                Live Case Log
+                Audit Log
               </span>
               <Monitor className="h-4 w-4 text-gray-500 dark:text-gray-400 ml-1" />
             </div>
@@ -1610,8 +1460,6 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalClinics}
           icon={Building2}
           color="bg-gradient-to-r from-blue-500 to-blue-600"
-          trend="up"
-          trendValue="+12%"
           onClick={handleViewClinics}
           clickable={true}
           subtitle="Registered Healthcare Facilities"
@@ -1622,8 +1470,6 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalAppointments}
           icon={Calendar}
           color="bg-gradient-to-r from-green-500 to-emerald-600"
-          trend="up"
-          trendValue="+8%"
           onClick={handleViewAppointments}
           clickable={true}
           subtitle="Scheduled & Completed"
@@ -1634,8 +1480,6 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalDoctors}
           icon={Stethoscope}
           color="bg-gradient-to-r from-purple-500 to-indigo-600"
-          trend="up"
-          trendValue="+5%"
           onClick={handleViewDoctors}
           clickable={true}
           subtitle="Licensed Medical Professionals"
@@ -1646,8 +1490,6 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalLabTests}
           icon={TestTube}
           color="bg-gradient-to-r from-orange-500 to-red-500"
-          trend="up"
-          trendValue="+15%"
           onClick={handleViewLabTests}
           clickable={true}
           subtitle="Total Lab Records"
@@ -1661,8 +1503,6 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalSuperMasterAdmins}
           icon={Users}
           color="bg-gradient-to-r from-red-500 to-pink-600"
-          trend="up"
-          trendValue="+4%"
           onClick={handleViewUsers}
           clickable={true}
           subtitle="Platform Administrators"
@@ -1673,8 +1513,6 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalReferrals}
           icon={ArrowRightLeft}
           color="bg-gradient-to-r from-teal-500 to-cyan-600"
-          trend="up"
-          trendValue="+3%"
           onClick={handleViewReferrals}
           clickable={true}
           subtitle="Patient Referrals"
@@ -1685,199 +1523,20 @@ const SuperMasterAdminDashboard = () => {
           value={stats.totalRevenue}
           icon={DollarSign}
           color="bg-gradient-to-r from-yellow-500 to-amber-600"
-          trend="up"
-          trendValue="+18%"
           onClick={handleViewRevenue}
           clickable={true}
           subtitle="Total Revenue"
-          description="Total amount from all invoices generated across all clinics"
+          description="Total of paid invoices across all clinics"
         />
         <StatCard
           title="System Health"
-          value="99.9%"
+          value={platformHealth?.database?.status || "Unavailable"}
           icon={Activity}
           color="bg-gradient-to-r from-emerald-500 to-green-600"
-          trend="up"
-          trendValue="Uptime"
           clickable={false}
-          subtitle="System Performance"
-          description="Platform uptime, server response time, and overall system reliability metrics"
+          subtitle={platformHealth?.system?.uptime ? `API up ${platformHealth.system.uptime}` : "System Status"}
+          description="Database readiness and API process uptime reported by /dashboard/system-health"
         />
-      </div>
-
-      {/* Compact Live Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {/* Live Activity Chart */}
-        <div className="bg-white dark:bg-gray-950/70 rounded-lg shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center">
-              <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2" />
-              Live Activity
-            </h3>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-50 dark:bg-green-900/200 rounded-full animate-pulse"></div>
-              <span className="text-xs text-green-600 dark:text-green-400 font-medium">Live</span>
-            </div>
-          </div>
-          {chartsLoading ? (
-            <div className="flex items-center justify-center h-[150px]">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            </div>
-          ) : chartsError ? (
-            <div className="flex items-center justify-center h-[150px] text-red-500">
-              <AlertCircle className="h-6 w-6 mr-2" />
-              <span className="text-sm">Failed to load chart data</span>
-            </div>
-          ) : (
-          <ResponsiveContainer width="100%" height={150}>
-            <AreaChart
-              data={realTimeData}
-              margin={{ top: 5, right: 10, left: 5, bottom: 5 }}
-            >
-              <defs>
-                <linearGradient
-                  id="activityGradient"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#4F46E5" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                strokeDasharray="2 2"
-                stroke="#E5E7EB"
-                strokeOpacity={0.5}
-              />
-              <XAxis
-                dataKey="time"
-                stroke="#6B7280"
-                fontSize={9}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: "#6B7280" }}
-              />
-              <YAxis
-                stroke="#6B7280"
-                fontSize={9}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: "#6B7280" }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#FFFFFF",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  boxShadow:
-                    "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                  fontSize: "11px",
-                }}
-                labelStyle={{ color: "#374151", fontWeight: "500" }}
-              />
-              <Area
-                type="monotone"
-                dataKey="activeUsers"
-                stroke="#4F46E5"
-                strokeWidth={1.5}
-                fill="url(#activityGradient)"
-                animationDuration={600}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-          )}
-          <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-medium text-blue-600 dark:text-blue-400">
-                {stats.totalUsers || 0}
-              </span>{" "}
-              Active Users
-            </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Last updated: {new Date().toLocaleTimeString()}
-            </div>
-          </div>
-        </div>
-
-        {/* System Performance */}
-        <div className="bg-white dark:bg-gray-950/70 rounded-lg shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center">
-              <Activity className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />
-              System Performance
-            </h3>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-50 dark:bg-green-900/200 rounded-full animate-pulse"></div>
-              <span className="text-xs text-green-600 dark:text-green-400 font-medium">99.9%</span>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {/* CPU Usage */}
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-600 dark:text-gray-400">CPU Usage</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">24%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-blue-50 dark:bg-blue-900/200 h-2 rounded-full"
-                  style={{ width: "24%" }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Memory Usage */}
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Memory Usage</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">67%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-yellow-50 dark:bg-yellow-900/200 h-2 rounded-full"
-                  style={{ width: "67%" }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Response Time */}
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Avg Response Time</span>
-                <span className="text-sm font-medium text-green-600 dark:text-green-400">
-                  120ms
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-green-50 dark:bg-green-900/200 h-2 rounded-full"
-                  style={{ width: "15%" }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Database Load */}
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Database Load</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">43%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-purple-50 dark:bg-purple-900/200 h-2 rounded-full"
-                  style={{ width: "43%" }}
-                ></div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-gray-100 text-center">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              System running smoothly
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* Charts Section */}
@@ -2039,7 +1698,7 @@ const SuperMasterAdminDashboard = () => {
                   boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
                 }}
                 formatter={(value, name, props) => [
-                  `${value}% (${props.payload.patients} patients)`,
+                  `${value}% (${props.payload.doctors} doctors)`,
                   name,
                 ]}
               />
@@ -2125,34 +1784,30 @@ const SuperMasterAdminDashboard = () => {
             </div>
             Recent Activity
           </h3>
-          <div className="space-y-4">
-            <div className="flex items-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-l-4 border-blue-500 dark:border-blue-600">
-              <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-3" />
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  New clinic registered
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">2 hours ago</p>
-              </div>
-            </div>
-            <div className="flex items-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border-l-4 border-green-500 dark:border-green-600">
-              <Stethoscope className="h-5 w-5 text-green-600 dark:text-green-400 mr-3" />
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  3 new doctors joined
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">4 hours ago</p>
-              </div>
-            </div>
-            <div className="flex items-center p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border-l-4 border-purple-500 dark:border-purple-600">
-              <TestTube className="h-5 w-5 text-purple-600 dark:text-purple-400 mr-3" />
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  45 lab tests completed
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">6 hours ago</p>
-              </div>
-            </div>
+          {/* Latest entries from the audit log (GET /audit) */}
+          <div className="space-y-3">
+            {recentAudit.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No recent activity recorded.</p>
+            ) : (
+              recentAudit.map((entry) => {
+                const EntryIcon = getActivityIcon(entry.action);
+                return (
+                  <div key={entry._id} className="flex items-center p-3 bg-gray-50 dark:bg-gray-900/40 rounded-lg border-l-4 border-blue-500 dark:border-blue-600">
+                    <EntryIcon className={`h-5 w-5 mr-3 ${getActivityColor(entry.action, entry.result)}`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {String(entry.action || '').replace(/_/g, ' ').toLowerCase()}
+                        {entry.resourceType ? ` • ${entry.resourceType}` : ''}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {entry.role ? `${entry.role.replace(/_/g, ' ')} • ` : ''}
+                        {entry.occurredAt ? formatTimeAgo(entry.occurredAt) : ''}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -2161,40 +1816,34 @@ const SuperMasterAdminDashboard = () => {
             <Activity className="h-5 w-5 mr-2 text-red-600" />
             System Health
           </h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-green-50 dark:bg-green-900/200 rounded-full mr-3"></div>
+          {/* Real values from GET /dashboard/system-health */}
+          {!platformHealth ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">System health is unavailable.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/40 rounded-lg">
                 <span className="text-sm text-gray-700 dark:text-gray-300">Database</span>
+                <span className={`text-sm font-medium ${platformHealth.database?.status === 'Connected' ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                  {platformHealth.database?.status || 'Unknown'}
+                </span>
               </div>
-              <span className="text-sm font-medium text-green-600 dark:text-green-400">
-                Healthy
-              </span>
+              {(platformHealth.services || []).map((svc) => (
+                <div key={svc.name} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/40 rounded-lg">
+                  <span className="text-sm text-gray-700 dark:text-gray-300 capitalize">{svc.name}</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    {svc.status}
+                    {typeof svc.latencyMs === 'number' ? ` • ${svc.latencyMs}ms` : ''}
+                  </span>
+                </div>
+              ))}
+              {platformHealth.system?.uptime && (
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/40 rounded-lg">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">API process uptime</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{platformHealth.system.uptime}</span>
+                </div>
+              )}
             </div>
-            <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-green-50 dark:bg-green-900/200 rounded-full mr-3"></div>
-                <span className="text-sm text-gray-700 dark:text-gray-300">API Response</span>
-              </div>
-              <span className="text-sm font-medium text-green-600 dark:text-green-400">120ms</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-green-50 dark:bg-green-900/200 rounded-full mr-3"></div>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Uptime</span>
-              </div>
-              <span className="text-sm font-medium text-green-600 dark:text-green-400">99.9%</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-yellow-50 dark:bg-yellow-900/200 rounded-full mr-3"></div>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Storage</span>
-              </div>
-              <span className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
-                78% Used
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -2672,7 +2321,7 @@ const SuperMasterAdminDashboard = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex space-x-2">
                               <button
-                                onClick={() => window.open(`${import.meta.env.VITE_API_URL || '/api/v1'}/lab-reports/${report._id}/download`, '_blank')}
+                                onClick={() => handleDownloadLabReport(report)}
                                 className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                                 title="Download Report"
                               >
@@ -2803,7 +2452,7 @@ const SuperMasterAdminDashboard = () => {
                   Invoice Revenue
                 </h2>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Total Invoices: {revenueDetails.length} | Total Revenue: ₹{stats.totalRevenue.toLocaleString()}
+                  Paid Invoices: {revenueDetails.length} | Total Revenue: ₹{stats.totalRevenue.toLocaleString()}
                 </p>
               </div>
               <button
@@ -2883,7 +2532,7 @@ const SuperMasterAdminDashboard = () => {
         </div>
       )}
 
-      {/* Live Case Log Modal */}
+      {/* Audit Log Modal (real entries from GET /audit) */}
       {showCaseLogModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-950 rounded-xl shadow-2xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-hidden">
@@ -2891,10 +2540,10 @@ const SuperMasterAdminDashboard = () => {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
                   <Monitor className="h-6 w-6 mr-3 text-[#004D99]" />
-                  Live Case Log
+                  Audit Log
                 </h2>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Real-time system activity and user sessions
+                  Latest recorded actions across the platform
                 </p>
               </div>
               <button
@@ -2912,64 +2561,45 @@ const SuperMasterAdminDashboard = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* System Health Overview */}
+                  {/* System Health Overview (real values only) */}
                   <div className="lg:col-span-1">
-                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 mb-6">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-900 rounded-xl p-6 mb-6">
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                         <Shield className="h-5 w-5 mr-2 text-[#004D99]" />
                         System Health
                       </h3>
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Total Users</span>
-                          <span className="text-sm font-semibold">{systemHealth.totalUsers || 0}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Active Sessions</span>
-                          <span className="text-sm font-semibold text-green-600 dark:text-green-400">{systemHealth.activeSessions || 0}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">System Uptime</span>
-                          <span className="text-sm font-semibold text-green-600 dark:text-green-400">{systemHealth.systemUptime || '99.9%'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Server Status</span>
-                          <span className="text-sm font-semibold text-green-600 dark:text-green-400 capitalize">{systemHealth.serverStatus || 'Healthy'}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Active Sessions */}
-                    <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm p-6 border border-gray-100">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                        <UserCheck className="h-5 w-5 mr-2 text-[#42A89B]" />
-                        Active Sessions ({activeSessions.length})
-                      </h3>
-                      <div className="space-y-3">
-                        {activeSessions.map((session) => (
-                          <div key={session._id} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-black rounded-lg">
-                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                              <UserCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{session.user}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">{session.role} • {session.clinic}</p>
-                              <p className="text-xs text-gray-400">IP: {session.ipAddress}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">{formatTimeAgo(session.loginTime)}</p>
-                              <p className="text-xs text-gray-400">Last: {formatTimeAgo(session.lastActivity)}</p>
-                            </div>
+                      {!platformHealth ? (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">System health is unavailable.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Database</span>
+                            <span className="text-sm font-semibold">{platformHealth.database?.status || 'Unknown'}</span>
                           </div>
-                        ))}
-                      </div>
+                          {platformHealth.system?.uptime && (
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">API process uptime</span>
+                              <span className="text-sm font-semibold">{platformHealth.system.uptime}</span>
+                            </div>
+                          )}
+                          {(platformHealth.services || []).map((svc) => (
+                            <div key={svc.name} className="flex justify-between">
+                              <span className="text-sm text-gray-600 dark:text-gray-400 capitalize">{svc.name}</span>
+                              <span className="text-sm font-semibold">
+                                {svc.status}
+                                {typeof svc.latencyMs === 'number' ? ` • ${svc.latencyMs}ms` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Activity Log */}
+                  {/* Audit entries */}
                   <div className="lg:col-span-2">
                     <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                      <div className="px-6 py-4 border-b border-gray-200 dark:border dark:border-gray-800 bg-gradient-to-r from-gray-50 to-gray-100">
+                      <div className="px-6 py-4 border-b border-gray-200 dark:border dark:border-gray-800 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-900">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
                           <Activity className="h-5 w-5 mr-2 text-[#004D99]" />
                           Recent Activity ({caseLogData.length})
@@ -2977,35 +2607,33 @@ const SuperMasterAdminDashboard = () => {
                       </div>
                       
                       <div className="max-h-96 overflow-y-auto">
-                        {caseLogData.map((activity) => {
-                          const ActivityIcon = getActivityIcon(activity.action);
+                        {caseLogData.map((entry) => {
+                          const ActivityIcon = getActivityIcon(entry.action);
+                          const ok = String(entry.result || 'SUCCESS').toUpperCase() === 'SUCCESS';
                           return (
-                            <div key={activity._id} className="p-4 border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-900 dark:bg-gray-900 transition-colors">
+                            <div key={entry._id} className="p-4 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
                               <div className="flex items-start space-x-3">
-                                <div className={`p-2 rounded-full ${getActivityColor(activity.action, activity.status).replace('text-', 'bg-').replace('-500', '-100')}`}>
-                                  <ActivityIcon className={`h-4 w-4 ${getActivityColor(activity.action, activity.status)}`} />
+                                <div className="p-2 rounded-full bg-gray-100 dark:bg-gray-800">
+                                  <ActivityIcon className={`h-4 w-4 ${getActivityColor(entry.action, entry.result)}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between">
                                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                      {activity.user} ({activity.role})
+                                      {String(entry.action || '').replace(/_/g, ' ').toLowerCase()}
                                     </p>
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">{formatTimeAgo(activity.timestamp)}</span>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                                      {entry.occurredAt ? new Date(entry.occurredAt).toLocaleString() : ''}
+                                    </span>
                                   </div>
-                                  <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                                    {activity.action.replace('_', ' ')} • {activity.clinic}
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                                    {entry.role ? entry.role.replace(/_/g, ' ') : 'system'}
+                                    {entry.resourceType ? ` • ${entry.resourceType}` : ''}
+                                    {entry.resourceId ? ` ${String(entry.resourceId).slice(0, 8)}` : ''}
                                   </p>
-                                  {activity.description && (
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{activity.description}</p>
-                                  )}
                                   <div className="flex items-center space-x-4 mt-2 text-xs text-gray-400">
-                                    <span>IP: {activity.ipAddress}</span>
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                      activity.status === 'success' 
-                                        ? 'bg-green-100 text-green-800' 
-                                        : 'bg-red-100 text-red-800'
-                                    }`}>
-                                      {activity.status}
+                                    {entry.ip && <span>IP: {entry.ip}</span>}
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                      {String(entry.result || 'SUCCESS').toLowerCase()}
                                     </span>
                                   </div>
                                 </div>
@@ -3019,7 +2647,7 @@ const SuperMasterAdminDashboard = () => {
                         <div className="text-center py-12">
                           <Activity className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No activity found</h3>
-                          <p className="text-gray-500 dark:text-gray-400">System activity will appear here in real-time.</p>
+                          <p className="text-gray-500 dark:text-gray-400">Recorded actions will appear here.</p>
                         </div>
                       )}
                     </div>

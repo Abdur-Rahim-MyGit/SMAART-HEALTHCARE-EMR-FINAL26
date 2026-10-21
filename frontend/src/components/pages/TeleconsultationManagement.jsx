@@ -30,7 +30,6 @@ import {
   AlertCircle,
   XCircle,
   FileText,
-  Download,
 } from "lucide-react";
 
 const TeleconsultationManagement = () => {
@@ -564,12 +563,24 @@ const TeleconsultationManagement = () => {
   };
 
   // Join consultation
+  // The backend does not generate video links: a meeting link must be saved on the
+  // teleconsultation. When one exists, open it and record the join (participant +
+  // status "In Progress") via POST /teleconsultations/:id/join.
   const joinConsultation = (consultation) => {
     const meetingUrl = getMeetingUrl(consultation);
-    if (meetingUrl) {
-      window.open(meetingUrl, "_blank");
-    } else {
-      toast.error("Meeting link not available");
+    if (!meetingUrl) {
+      toast.error(
+        "No meeting link has been set for this teleconsultation, so it cannot be joined online yet. Video links are not generated automatically."
+      );
+      return;
+    }
+    window.open(meetingUrl, "_blank", "noopener");
+    const id = consultation._id || consultation.id;
+    if (id) {
+      teleconsultationsAPI
+        .join(id)
+        .then(() => fetchData())
+        .catch((err) => console.error("Error recording teleconsultation join:", err));
     }
   };
 
@@ -767,22 +778,6 @@ const TeleconsultationManagement = () => {
                           ? "Join Now"
                           : "View Link"}
                       </button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Recording:</span>
-                      <span className="text-sm">
-                        {consultation.features?.recording?.enabled &&
-                        consultation.features?.recording?.recordingUrl ? (
-                          <button className="text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-medium">
-                            <Download className="h-4 w-4 inline mr-1" />
-                            Available
-                          </button>
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400">
-                            Not Available
-                          </span>
-                        )}
-                      </span>
                     </div>
                     {consultation.jitsiConfig && (
                       <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">

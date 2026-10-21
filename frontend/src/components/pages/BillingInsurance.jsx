@@ -70,13 +70,24 @@ const BillingInsurance = () => {
   const fetchBills = async () => {
     setLoading(true);
     try {
-      // Fetch real invoices data from API
-      const response = await invoicesAPI.getAll();
-      console.log("Invoices API Response:", response?.data);
+      // Fetch ALL invoices (the API pages at max 200) so totals are not
+      // computed from the first page only.
+      const PAGE_SIZE = 200;
+      const MAX_PAGES = 100;
+      let response = await invoicesAPI.getAll({ page: 1, limit: PAGE_SIZE });
+      let invoicesData = [];
+      if (response?.data?.success) {
+        const first = response.data.invoices || response.data.data || [];
+        invoicesData = Array.isArray(first) ? [...first] : [];
+        const pages = Math.min(response.data.pagination?.pages || 1, MAX_PAGES);
+        for (let page = 2; page <= pages; page++) {
+          const next = await invoicesAPI.getAll({ page, limit: PAGE_SIZE });
+          const rows = next?.data?.invoices || next?.data?.data || [];
+          if (Array.isArray(rows)) invoicesData.push(...rows);
+        }
+      }
 
       if (response?.data?.success) {
-        const invoicesData =
-          response.data.invoices || response.data.data || response.data;
 
         // Map invoice data to match Invoice model structure exactly
         const mappedBills = Array.isArray(invoicesData)
@@ -115,7 +126,8 @@ const BillingInsurance = () => {
               rejectedBy: invoice.rejectedBy || null,
               rejectionReason: invoice.rejectionReason || "",
               // Derived fields for UI
-              paymentMethod: "Invoice", // Default for invoices
+              // Real payment method recorded on the invoice (empty if none yet)
+              paymentMethod: invoice.paymentMethod || "",
               services: invoice.lineItems?.map((item) => item.description) || [
                 "General Service",
               ],
@@ -127,16 +139,22 @@ const BillingInsurance = () => {
               )
                 .toISOString()
                 .split("T")[0], // 30 days from invoice date
-              // Calculate paid amount based on status
-              paidAmount: invoice.status === "Approved" ? invoice.total : 0,
+              // Paid amount: a 'Paid' invoice is fully paid; otherwise use the
+              // amount recorded by the backend (partial payments).
+              paidAmount:
+                invoice.status === "Paid"
+                  ? Number(invoice.total) || 0
+                  : Number(invoice.paidAmount) || 0,
             }))
           : [];
 
         console.log("Mapped bills data:", mappedBills);
         setBills(mappedBills);
         calculateStats(mappedBills);
-        // Set payment methods for invoices
-        setPaymentMethods(["Invoice", "Insurance", "Self Pay", "Credit Card"]);
+        // Payment-method filter options = methods actually recorded on invoices
+        setPaymentMethods([
+          ...new Set(mappedBills.map((b) => b.paymentMethod).filter(Boolean)),
+        ]);
 
         if (mappedBills.length > 0) {
           toast.success(`Loaded ${mappedBills.length} invoices`);
@@ -318,7 +336,7 @@ const BillingInsurance = () => {
         ["Total Amount:", `₹${bill.amount}`],
         ["Paid Amount:", `₹${bill.paidAmount}`],
         ["Balance:", `₹${bill.amount - bill.paidAmount}`],
-        ["Payment Method:", bill.paymentMethod],
+        ["Payment Method:", bill.paymentMethod || "N/A"],
         ["Status:", bill.status.toUpperCase()],
         [""],
         ["Dates"],
@@ -1121,7 +1139,7 @@ const BillingInsurance = () => {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {bill.paymentMethod}
+                            {bill.paymentMethod || "Not recorded"}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
                             Payment Type
