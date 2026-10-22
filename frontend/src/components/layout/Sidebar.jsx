@@ -16,7 +16,6 @@ import {
   ArrowRightLeft,
   BarChart3,
   Shield,
-  HelpCircle,
   Activity,
   UserCheck,
   X,
@@ -56,7 +55,7 @@ const Sidebar = ({ onClose }) => {
             icon: BarChart3,
           },
           { path: "/pharmacy", label: "Pharmacy Management", icon: Pill },
-          { path: "/support", label: "Customer Support", icon: HelpCircle },
+          { path: "/users", label: "Staff / Users", icon: Users },
           { path: "/settings", label: "Settings", icon: Settings },
         ];
 

@@ -368,14 +368,6 @@ const Appointments = () => {
               <Activity className="h-4 w-4 mr-2" />
               Refresh Data
             </button>
-            {(user.role === "patient" ||
-              user.role === "super_master_admin" ||
-              user.role === "clinic_admin") && (
-              <button className="bg-gradient-to-r from-[#004D99] to-[#42A89B] text-white dark:text-gray-100 py-2 px-4 rounded-lg text-sm font-medium hover:from-[#003d80] hover:to-[#3a7d92] transition-all flex items-center shadow-lg dark:shadow-gray-900">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                Live
-              </button>
-            )}
           </div>
         </div>
       </div>

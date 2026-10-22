@@ -1,6 +1,8 @@
 'use strict';
-const { ObjectId } = require('mongodb');
-const { withTenant, contains } = require('../../infrastructure/mongodb/tenant');
+const crypto = require('crypto');
+const { getKnex } = require('../../infrastructure/postgres/knex');
+const { withTenant } = require('../../infrastructure/postgres/tenant');
+const { BaseRepository } = require('../../infrastructure/postgres/BaseRepository');
 const { ROLES } = require('../../common/security/rbac');
 const { hashPassword, validatePasswordStrength } = require('../../common/security/password');
 const { notFound, badRequest, conflict, forbidden } = require('../../common/errors/AppError');
@@ -85,6 +87,64 @@ async function geocodePreview(input) {
   return geocodeAddress(input);
 }
 
+/** Mirror after commit; never blocks or fails the save. */
+function mirrorLater(row) {
+  if (row) mirrorClinicToMongo(row).catch(() => { });
+}
+
+function toRow(input) {
+  const row = pickForDb(input, CLINIC_FIELDS);
+  for (const f of JSON_FIELDS) if (input[f] !== undefined) row[f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = JSON.stringify(Array.isArray(input[f]) ? input[f] : []);
+  if (input.email) row.email = String(input.email).toLowerCase();
+  return row;
+}
+
+// Clinic display codes: "UKGW" + 6 chars from a 32-symbol alphabet (~1e9 values).
+// 256 % 32 === 0, so mapping random bytes onto the alphabet has no bias.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function generateClinicCode() {
+  let code = 'UKGW';
+  for (const b of crypto.randomBytes(6)) code += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return code;
+}
+/** Returns a clinic_code that is free (the column is UNIQUE, including soft-deleted rows). */
+async function resolveClinicCode(trx, requested) {
+  const free = async (code) => !(await trx('clinics').where({ clinic_code: code }).first('id'));
+  if (requested) {
+    if (!(await free(requested))) throw conflict('This clinic code is already in use', 'CLINIC_CODE_TAKEN');
+    return requested;
+  }
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = generateClinicCode();
+    if (await free(code)) return code;
+  }
+  throw conflict('Could not allocate a unique clinic code, please retry', 'CLINIC_CODE_TAKEN');
+}
+
+/**
+ * "Additional users" from the Add Clinic form become extra clinic_admin accounts of the
+ * new clinic (the only clinic-scoped role). Validated and hashed before the transaction.
+ */
+async function prepareAdditionalUsers(list, adminEmail) {
+  const users = Array.isArray(list) ? list : [];
+  const seen = new Set([adminEmail]);
+  const out = [];
+  for (const [i, u] of users.entries()) {
+    const label = `Additional user ${i + 1}`;
+    const name = String(u.name || '').trim();
+    const email = String(u.email || '').trim().toLowerCase();
+    if (!name) throw badRequest(`${label}: name is required`, 'VALIDATION_ERROR');
+    if (!email) throw badRequest(`${label}: email is required`, 'VALIDATION_ERROR');
+    if (seen.has(email)) throw conflict(`${label}: email ${email} is used more than once`, 'EMAIL_TAKEN');
+    seen.add(email);
+    const problems = validatePasswordStrength(u.password);
+    if (problems.length) throw badRequest(`${label}: password must contain ${problems.join(', ')}`, 'WEAK_PASSWORD');
+    const [firstName, ...rest] = name.split(/\s+/);
+    out.push({ email, firstName, lastName: rest.join(' ') || null, fullName: name, phone: u.phone ? String(u.phone).trim() : null, passwordHash: await hashPassword(u.password) });
+  }
+  return out;
+}
+
 function validityFrom(input) {
   const vp = input.validityPeriod || {};
   const start = vp.startDate ? new Date(vp.startDate) : new Date();
@@ -115,18 +175,36 @@ async function create(scope, input, ctx) {
   if (problems.length) throw badRequest(`Admin password must contain ${problems.join(', ')}`, 'WEAK_PASSWORD');
   const adminEmail = String(input.adminEmail).toLowerCase();
   const passwordHash = await hashPassword(input.adminPassword);
+  const extraUsers = await prepareAdditionalUsers(input.additionalUsers, adminEmail);
   const location = await resolveLocation(input, null); // network lookup before the transaction opens
-  return withTenant(scope, async (db) => {
-    if (await db.c('users').exists({ email: adminEmail })) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
-    // A blank admin name is not a reason to reject the clinic: fall back to the owner.
+  let createdRow = null;
+  const result = await withTenant(scope, async (trx) => {
+    const existingUser = await trx('users').whereRaw('lower(email::text) = ?', [adminEmail]).whereNull('deleted_at').first('id');
+    if (existingUser) throw conflict('A user with the admin email already exists', 'ADMIN_EMAIL_TAKEN');
+    for (const u of extraUsers) {
+      const taken = await trx('users').whereRaw('lower(email::text) = ?', [u.email]).whereNull('deleted_at').first('id');
+      if (taken) throw conflict(`A user with the email ${u.email} already exists`, 'EMAIL_TAKEN');
+    }
     const adminName = String(input.adminName || '').trim() || String(input.ownerName || '').trim() || 'Clinic Admin';
-    const newClinicId = new ObjectId();
-    const clinicCode = input.clinicId || `CLN-${String(newClinicId).slice(-6).toUpperCase()}`;
-    const clinic = await db.c('clinics').insertOne({ _id: newClinicId, clinicId: clinicCode, clinicCode, ...pick(input, FIELDS), ...location, name: input.name, adminName, adminEmail, adminUsername: input.adminUsername || null, isActive: input.isActive !== false, ...validityFrom(input), renewalHistory: [], settings: {} });
+    const clinicCode = await resolveClinicCode(trx, input.clinicId || null);
+    const [clinic] = await trx('clinics')
+      .insert({ ...toRow(input), ...location, admin_name: adminName, admin_email: adminEmail, admin_username: input.adminUsername || null, clinic_code: clinicCode, is_active: input.isActive !== false, ...validityFrom(input), created_by: scope.userId, updated_by: scope.userId })
+      .returning('*');
     const [firstName, ...rest] = adminName.split(' ');
-    const admin = await db.c('users').insertOne({ clinicId: clinic._id, role: ROLES.CLINIC_ADMIN, email: adminEmail, passwordHash, firstName, lastName: rest.join(' ') || null, fullName: adminName, phone: input.adminContact || null, username: input.adminUsername || null, isActive: true, isVerified: true, lastLoginAt: null, failedLoginAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
-    await auditInTrx(db, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic._id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin._id } });
-    await enqueueEvent(db, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic._id, clinicId: clinic._id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
+    const [admin] = await trx('users')
+      .insert({ clinic_id: clinic.id, role: ROLES.CLINIC_ADMIN, email: adminEmail, password_hash: passwordHash, first_name: firstName, last_name: rest.join(' ') || null, full_name: adminName, phone: input.adminContact || null, username: input.adminUsername || null, is_active: true, is_verified: true, created_by: scope.userId, updated_by: scope.userId })
+      .returning('id');
+    const additionalUserIds = [];
+    for (const u of extraUsers) {
+      const [row] = await trx('users')
+        .insert({ clinic_id: clinic.id, role: ROLES.CLINIC_ADMIN, email: u.email, password_hash: u.passwordHash, first_name: u.firstName, last_name: u.lastName, full_name: u.fullName, phone: u.phone, is_active: true, is_verified: true, created_by: scope.userId, updated_by: scope.userId })
+        .returning('id');
+      additionalUserIds.push(row.id);
+      await auditInTrx(trx, scope, { action: 'USER_CREATED', resourceType: 'user', resourceId: row.id, requestId: ctx.requestId, ip: ctx.ip, details: { role: ROLES.CLINIC_ADMIN, clinicId: clinic.id, via: 'clinic_create' } });
+    }
+    await auditInTrx(trx, scope, { action: 'CLINIC_CREATED', resourceType: 'clinic', resourceId: clinic.id, requestId: ctx.requestId, ip: ctx.ip, details: { adminUserId: admin.id, additionalUserIds } });
+    await enqueueEvent(trx, { type: 'clinic.created', aggregateType: 'clinic', aggregateId: clinic.id, clinicId: clinic.id, actorId: scope.userId, payload: { name: clinic.name, adminEmail, adminName } });
+    createdRow = clinic;
     return serializeClinic(clinic, { includeSensitive: true });
   });
 }
@@ -213,11 +291,11 @@ async function dashboardData(scope, clinicId) {
     const todayAppointments = await db.c('appointments').count({ clinicId, scheduledAt: { $gte: start, $lt: end } });
     const age = (dob) => (dob ? new Date().getFullYear() - new Date(dob).getFullYear() : null);
     return {
-      clinic: { id: clinic._id, name: clinic.name, adminEmail: clinic.adminEmail, phone: clinic.phone, address: clinic.address, city: clinic.city, state: clinic.state },
-      stats: { totalPatients, totalDoctors: doctors.length, totalNurses: nurses.length, totalStaff: doctors.length + nurses.length, todayAppointments },
-      patients: patients.map((p) => ({ id: p._id, name: p.fullName, age: age(p.dateOfBirth), gender: p.gender, bloodType: p.bloodGroup, modeOfCare: p.modeOfCare, registeredDate: p.createdAt })),
-      doctors: doctors.map((d) => ({ id: d._id, name: d.fullName, email: d.email, phone: d.phone, specialization: d.specialty, joinedDate: d.createdAt })),
-      nurses: nurses.map((n) => ({ id: n._id, name: n.fullName, email: n.email, phone: n.phone, department: n.department, joinedDate: n.createdAt })),
+      clinic: { id: clinic.id, name: clinic.name, email: clinic.email, adminName: clinic.admin_name, adminEmail: clinic.admin_email, adminContact: clinic.admin_contact, phone: clinic.phone, address: clinic.address, city: clinic.city, state: clinic.state, operatingHours: clinic.operating_hours, isActive: clinic.is_active },
+      stats: { totalPatients, totalDoctors, totalNurses, totalStaff: totalDoctors + totalNurses, todayAppointments: Number(todayAppointments) },
+      patients: patients.map((p) => ({ id: p.id, name: p.full_name, age: age(p.date_of_birth), gender: p.gender, bloodType: p.blood_group, modeOfCare: p.mode_of_care, registeredDate: p.created_at })),
+      doctors: doctors.map((d) => ({ id: d.id, name: d.full_name, email: d.email, phone: d.phone, specialization: d.specialty, joinedDate: d.created_at })),
+      nurses: nurses.map((n) => ({ id: n.id, name: n.full_name, email: n.email, phone: n.phone, department: n.department, joinedDate: n.created_at })),
     };
   });
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Building2,
   Users,
@@ -25,6 +26,7 @@ import { toast } from "react-hot-toast";
 
 const ClinicDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [clinicData, setClinicData] = useState(null);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -184,7 +186,7 @@ const ClinicDashboard = () => {
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Admin</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {clinicData?.adminName || user?.adminName || "Admin Name"}
+                {clinicData?.adminName || user?.adminName || "Not provided"}
               </p>
             </div>
           </div>
@@ -193,7 +195,7 @@ const ClinicDashboard = () => {
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {clinicData?.adminEmail || user?.email || "admin@clinic.com"}
+                {clinicData?.email || clinicData?.adminEmail || "Not provided"}
               </p>
             </div>
           </div>
@@ -202,7 +204,7 @@ const ClinicDashboard = () => {
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {clinicData?.phone || "+1 (555) 123-4567"}
+                {clinicData?.phone || clinicData?.adminContact || "Not provided"}
               </p>
             </div>
           </div>
@@ -213,7 +215,9 @@ const ClinicDashboard = () => {
                 Address
               </p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {clinicData?.address || "123 Healthcare St, Medical City"}
+                {[clinicData?.address, clinicData?.city, clinicData?.state]
+                  .filter(Boolean)
+                  .join(", ") || "Not provided"}
               </p>
             </div>
           </div>
@@ -224,7 +228,7 @@ const ClinicDashboard = () => {
                 Operating Hours
               </p>
               <p className="font-medium text-gray-900 dark:text-white">
-                8:00 AM - 6:00 PM
+                {clinicData?.operatingHours || "Not provided"}
               </p>
             </div>
           </div>
@@ -232,9 +236,15 @@ const ClinicDashboard = () => {
             <Activity className="h-5 w-5 text-gray-500 dark:text-gray-400" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                Active
-              </span>
+              {clinicData?.isActive === false ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                  Inactive
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                  Active
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -247,48 +257,36 @@ const ClinicDashboard = () => {
           value={stats.totalPatients}
           icon={Users}
           color="bg-[#004D99]"
-          trend="up"
-          trendValue="+12%"
         />
         <StatCard
           title="Doctors"
           value={stats.totalDoctors}
           icon={Stethoscope}
           color="bg-green-500"
-          trend="up"
-          trendValue="+2"
         />
         <StatCard
           title="Nurses"
           value={stats.totalNurses}
           icon={UserCheck}
           color="bg-purple-500"
-          trend="up"
-          trendValue="+3"
         />
         <StatCard
           title="Today's Appointments"
           value={stats.todayAppointments}
           icon={Calendar}
           color="bg-orange-500"
-          trend="up"
-          trendValue="+8%"
         />
         <StatCard
           title="Total Staff"
           value={stats.totalStaff}
           icon={Activity}
           color="bg-red-500"
-          trend="up"
-          trendValue="+5%"
         />
         <StatCard
           title="All Departments"
           value={stats.totalDoctors + stats.totalNurses}
           icon={BarChart3}
           color="bg-blue-500"
-          trend="up"
-          trendValue="+15%"
         />
       </div>
       {/* Recent Patients */}
@@ -409,7 +407,7 @@ const ClinicDashboard = () => {
               <span className="truncate">Nurses ({stats.totalNurses})</span>
             </h2>
             <button
-              onClick={() => navigate("/NurseManagement")}
+              onClick={() => navigate("/nurses")}
               className="flex items-center text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 text-xs sm:text-sm font-medium transition-colors flex-shrink-0"
             >
               <span className="hidden sm:inline">View Nurse</span>

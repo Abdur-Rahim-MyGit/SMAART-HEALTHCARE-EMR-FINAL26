@@ -62,9 +62,6 @@ const Login = () => {
           otp: data.otp,
         });
         if (response.data.success) {
-          console.log('OTP Verification Response:', response.data); // Debug log
-          console.log('User data:', response.data.user); // Debug log
-          console.log('User role:', response.data.user.role); // Debug log
           login(response.data.user, response.data.token);
           toast.success("Login successful with OTP verification!");
           setShowPostLoginAnimation(true);
@@ -105,7 +102,6 @@ const Login = () => {
       // Direct login without OTP
       const response = await authAPI.login(formData);
       if (response.data.success) {
-        console.log('Developer Login Response:', response.data);
         login(response.data.user, response.data.token);
         toast.success("🔓 Developer login successful (OTP bypassed)!");
         setShowPostLoginAnimation(true);
@@ -410,14 +406,6 @@ const Login = () => {
 
           <div className="text-center">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {/* Don't have an account?{' '} */}
-              <Link
-                to="/register"
-                className="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-              >
-                {/* Register here */}
-              </Link>
-              {/* <span className="mx-2 text-gray-300">|</span> */}
               <Link
                 to={`/forgot-password?type=${loginType}`}
                 className="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"

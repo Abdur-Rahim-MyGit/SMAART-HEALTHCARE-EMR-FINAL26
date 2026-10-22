@@ -55,24 +55,25 @@ api.interceptors.response.use(
 
 // Auth API
 export const authAPI = {
-  register: (data) => api.post("/auth/register", data),
   login: (data) => api.post("/auth/login", data),
   clinicLogin: (data) => api.post("/auth/clinic-login", data),
   requestLoginOTP: (data) => api.post("/auth/request-login-otp", data),
   verifyLoginOTP: (data) => api.post("/auth/verify-login-otp", data),
-  verifyOTP: (data) => api.post("/auth/verify-otp", data),
   requestPasswordReset: (data) => api.post("/auth/forgot-password", data),
   verifyResetOTP: (data) => api.post("/auth/verify-reset-otp", data),
   resetPassword: (data) => api.post("/auth/reset-password", data),
   me: () => api.get("/auth/me"),
   logout: (token) => api.post("/auth/logout", {}, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
   refresh: () => api.post("/auth/refresh"),
+  // Body: { currentPassword, newPassword } (min 8 chars, a letter and a digit).
+  changePassword: (data) => api.post("/auth/change-password", data),
 };
 
 // Users API
 export const usersAPI = {
   getAll: (params) => api.get("/users", { params }),
   getById: (id) => api.get(`/users/${id}`),
+  create: (data) => api.post("/users", data),
   update: (id, data) => api.put(`/users/${id}`, data),
   delete: (id) => api.delete(`/users/${id}`),
 };
@@ -150,6 +151,13 @@ export const invoicesAPI = {
   update: (id, data) => api.put(`/invoices/${id}`, data),
   delete: (id) => api.delete(`/invoices/${id}`),
   getStats: () => api.get("/invoices/stats"),
+  // Server-side totals across ALL invoices (totalRevenue = sum of Paid invoices).
+  getStatsOverview: () => api.get("/invoices/stats/overview"),
+};
+
+// Audit log API (requires audit:read)
+export const auditAPI = {
+  getAll: (params) => api.get("/audit", { params }),
 };
 
 // Doctors API
@@ -214,32 +222,8 @@ export const consultationsAPI = {
   getById: (id) => api.get(`/consultations/${id}`),
   create: (data) => api.post("/consultations", data),
   update: (id, data) => api.put(`/consultations/${id}`, data),
-  delete: (id) => api.delete(`/consultations/${id}`),
   getByPatient: (patientId) => api.get(`/consultations/patient/${patientId}`),
   getDiagnosesByPatient: (patientId) => api.get(`/consultations/patient/${patientId}/diagnoses`),
-};
-
-// Case Log API
-export const caseLogAPI = {
-  // System-wide activity log
-  getSystemActivity: (params) =>
-    api.get("/patientCaseLogs/system-activity", { params }),
-  getLoginHistory: (params) =>
-    api.get("/patientCaseLogs/login-history", { params }),
-  getLiveActivity: () => api.get("/patientCaseLogs/live-activity"),
-
-  // Patient-specific case logs
-  getByPatient: (patientId) => api.get(`/patientCaseLogs/${patientId}`),
-  getLoginHistoryByPatient: (patientId, params) =>
-    api.get(`/patientCaseLogs/login-history/${patientId}`, { params }),
-  getActivityByPatient: (patientId, params) =>
-    api.get(`/patientCaseLogs/activity/${patientId}`, { params }),
-  addActivity: (patientId, data) =>
-    api.post(`/patientCaseLogs/activity/${patientId}`, data),
-
-  // System monitoring
-  getSystemHealth: () => api.get("/patientCaseLogs/system-health"),
-  getActiveSessions: () => api.get("/patientCaseLogs/active-sessions"),
 };
 
 // Vitals API
@@ -407,6 +391,13 @@ export const postAPI = {
     const response = await api.post(`/posts/${id}/comments`, { content });
     return response.data;
   }
+};
+
+// Pharmacy inventory API (clinic stock, mounted at /medications)
+export const pharmacyAPI = {
+  getByClinic: (clinicId, params) => api.get(`/medications/clinic/${clinicId}`, { params }),
+  create: (data) => api.post("/medications", data),
+  update: (id, data) => api.put(`/medications/${id}`, data),
 };
 
 export default api;
