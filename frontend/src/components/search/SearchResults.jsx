@@ -85,7 +85,6 @@ const SearchResults = () => {
       'logout': LogOut,
       
       // Documents
-      'reports': FileText,
       'medical reports': FileText
     };
 

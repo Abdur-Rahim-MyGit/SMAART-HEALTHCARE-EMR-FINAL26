@@ -257,39 +257,122 @@ const Clinics = () => {
     );
   }
 
+  const clinicStats = {
+    total: clinics.length,
+    active: clinics.filter((c) => c.isActive).length,
+    inactive: clinics.filter((c) => !c.isActive).length,
+    multiSpecialty: clinics.filter((c) => (c.type || "").toLowerCase().includes("multi")).length,
+  };
+
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      {/* Signature EMR Gradient Header Banner */}
+      <div className="bg-gradient-to-r from-[#e6f0ff] to-[#e6f7f5] dark:from-gray-800 dark:to-gray-700 rounded-2xl p-6 shadow-sm border border-blue-50/50 dark:border-gray-800">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              Clinics Management
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Manage healthcare facilities and clinic information
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-blue-600 text-white rounded-xl shadow-md">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                Clinics Management
+              </h1>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 text-sm sm:text-base">
+              Healthcare facility registry, operational validity periods, and multi-tenant clinic administration
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
-              className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg dark:shadow-gray-900 hover:shadow-xl dark:shadow-gray-900 transform hover:-translate-y-0.5"
               onClick={() => {
                 setLoading(true);
                 fetchClinics();
                 toast.success("Clinics list refreshed");
               }}
               disabled={loading}
+              className="bg-white/80 dark:bg-gray-800/80 backdrop-blur text-gray-700 dark:text-gray-200 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-white dark:hover:bg-gray-800 transition-all flex items-center shadow-sm border border-gray-200 dark:border-gray-700"
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              <span className="font-medium">Refresh</span>
+              <RefreshCw className={`h-4 w-4 mr-2 text-blue-600 dark:text-blue-400 ${loading ? 'animate-spin' : ''}`} />
+              Refresh Data
             </button>
             <button
-              className="bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white px-6 py-3 rounded-xl flex items-center gap-3 transition-all duration-200 shadow-lg dark:shadow-gray-900 hover:shadow-xl dark:shadow-gray-900 transform hover:-translate-y-0.5"
               onClick={() => setShowModal(true)}
+              className="bg-gradient-to-r from-[#004D99] to-[#42A89B] hover:from-[#003d80] hover:to-[#3a7d92] text-white py-2.5 px-5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-lg transition-all transform hover:-translate-y-0.5"
             >
-              <Plus className="h-5 w-5" />
-              <span className="font-semibold">Add New Clinic</span>
+              <Plus className="h-4 w-4" />
+              Add New Clinic
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Statistics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Total Clinics
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">
+                {clinicStats.total}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Registered facilities</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <Building2 className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Active Clinics
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                {clinicStats.active}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Operational & valid</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <Activity className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Inactive Clinics
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-rose-600 dark:text-rose-400 mt-1">
+                {clinicStats.inactive}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Suspended or expired</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <Building className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Multi-Speciality
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-purple-600 dark:text-purple-400 mt-1">
+                {clinicStats.multiSpecialty}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Comprehensive centers</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Globe className="h-6 w-6" />
+            </div>
           </div>
         </div>
       </div>
@@ -1686,7 +1769,7 @@ const Clinics = () => {
                   <input
                     type="text"
                     placeholder="Search by reg. number..."
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent" bg-white dark:bg-gray-950 dark:text-white
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={filters.registrationNumber}
                     onChange={(e) =>
                       setFilters({
@@ -1706,7 +1789,7 @@ const Clinics = () => {
                   <input
                     type="text"
                     placeholder="Search by name..."
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent" bg-white dark:bg-gray-950 dark:text-white
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={filters.name}
                     onChange={(e) =>
                       setFilters({ ...filters, name: e.target.value })
@@ -1721,7 +1804,7 @@ const Clinics = () => {
                     Clinic Type
                   </label>
                   <select
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent" bg-white dark:bg-gray-950 dark:text-white
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={filters.type}
                     onChange={(e) =>
                       setFilters({ ...filters, type: e.target.value })
@@ -1747,7 +1830,7 @@ const Clinics = () => {
                   <input
                     type="text"
                     placeholder="Search by country..."
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent" bg-white dark:bg-gray-950 dark:text-white
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={filters.country}
                     onChange={(e) =>
                       setFilters({ ...filters, country: e.target.value })
@@ -1762,7 +1845,7 @@ const Clinics = () => {
                     Status
                   </label>
                   <select
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent" bg-white dark:bg-gray-950 dark:text-white
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={filters.status}
                     onChange={(e) =>
                       setFilters({ ...filters, status: e.target.value })
@@ -1802,191 +1885,144 @@ const Clinics = () => {
           )}
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-900">
+          <table className="w-full divide-y divide-gray-200 dark:divide-gray-800">
+            <thead className="bg-gray-50 dark:bg-gray-900/80">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Registration Number
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Clinic & Reg #
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Clinic Name
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Type & Location
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Type
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Validity & Expiry
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Country
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Validity
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  End Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Actions
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-950 dark:text-white divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="bg-white dark:bg-gray-950 dark:text-white divide-y divide-gray-200 dark:divide-gray-800">
               {filteredClinics.map((clinic) => (
                 <tr 
                   key={clinic._id} 
-                  className="hover:bg-gray-50 dark:hover:bg-gray-900 dark:bg-gray-900 cursor-pointer transition-colors"
+                  className="hover:bg-blue-50/40 dark:hover:bg-gray-900/50 cursor-pointer transition-colors"
                   onClick={() => setSelectedClinic(clinic)}
                 >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {clinic.registrationNumber}
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-gray-900 dark:text-white text-sm truncate max-w-[220px]">
+                      {clinic.name}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">
+                      Reg: {clinic.registrationNumber}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">{clinic.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{clinic.type}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {clinic.country}
+                  <td className="px-4 py-3 text-xs">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200">
+                      {clinic.type || "Clinic"}
+                    </span>
+                    <div className="text-gray-500 dark:text-gray-400 mt-1 truncate max-w-[180px]">
+                      {clinic.city ? `${clinic.city}, ` : ''}{clinic.country || 'Not specified'}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {(() => {
-                      const duration = clinic.validityPeriod?.duration;
-                      if (!duration) {
-                        return (
-                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-full">
-                            No Duration Set
-                          </span>
-                        );
-                      }
-
-                      const years = Math.floor(duration / 12);
-                      const months = duration % 12;
-                      
-                      if (years > 0 && months > 0) {
-                        return (
-                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                            {years} year{years > 1 ? 's' : ''} {months} month{months > 1 ? 's' : ''}
-                          </span>
-                        );
-                      } else if (years > 0) {
-                        return (
-                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                            {years} year{years > 1 ? 's' : ''}
-                          </span>
-                        );
-                      } else {
-                        return (
-                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                            {months} month{months > 1 ? 's' : ''}
-                          </span>
-                        );
-                      }
-                    })()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {(() => {
-                      const validityEndDate = clinic.validityPeriod?.endDate
-                        ? new Date(clinic.validityPeriod.endDate)
-                        : clinic.validityEndDate
-                        ? new Date(clinic.validityEndDate)
-                        : null;
-
-                      if (!validityEndDate) {
-                        return (
-                          <span className="text-gray-500 dark:text-gray-400 text-sm">
-                            No End Date
-                          </span>
-                        );
-                      }
-
-                      const today = new Date();
-                      const isExpired = validityEndDate < today;
-                      const daysUntilExpiry = Math.ceil(
-                        (validityEndDate - today) / (1000 * 60 * 60 * 24)
-                      );
-
-                      const formattedDate = validityEndDate.toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      });
-
-                      // Check if this is a recently updated clinic (within last 24 hours)
-                      const isRecentlyUpdated = clinic.updatedAt && 
-                        new Date(clinic.updatedAt) > new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-                      if (isExpired) {
-                        return (
-                          <div className="flex flex-col relative">
-                            <span className="text-red-600 text-sm font-medium">
-                              {formattedDate}
+                  <td className="px-4 py-3 text-xs">
+                    <div className="flex flex-col gap-1">
+                      <div>
+                        {(() => {
+                          const duration = clinic.validityPeriod?.duration;
+                          if (!duration) {
+                            return (
+                              <span className="px-2 py-0.5 text-[11px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full">
+                                No Duration Set
+                              </span>
+                            );
+                          }
+                          const years = Math.floor(duration / 12);
+                          const months = duration % 12;
+                          let durationText = "";
+                          if (years > 0 && months > 0) durationText = `${years}y ${months}m`;
+                          else if (years > 0) durationText = `${years} year${years > 1 ? 's' : ''}`;
+                          else durationText = `${months} month${months > 1 ? 's' : ''}`;
+                          
+                          return (
+                            <span className="px-2 py-0.5 text-[11px] font-medium bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200/50 dark:border-blue-800/50">
+                              {durationText}
                             </span>
-                            <div className="flex items-center gap-1">
-                              <span className="text-red-500 text-xs">
+                          );
+                        })()}
+                      </div>
+                      {(() => {
+                        const validityEndDate = clinic.validityPeriod?.endDate
+                          ? new Date(clinic.validityPeriod.endDate)
+                          : clinic.validityEndDate
+                          ? new Date(clinic.validityEndDate)
+                          : null;
+
+                        if (!validityEndDate) {
+                          return (
+                            <span className="text-gray-400 text-[11px]">
+                              No End Date
+                            </span>
+                          );
+                        }
+
+                        const today = new Date();
+                        const isExpired = validityEndDate < today;
+                        const daysUntilExpiry = Math.ceil(
+                          (validityEndDate - today) / (1000 * 60 * 60 * 24)
+                        );
+
+                        const formattedDate = validityEndDate.toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        });
+
+                        if (isExpired) {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-rose-600 dark:text-rose-400 font-medium">
+                                {formattedDate}
+                              </span>
+                              <span className="inline-flex px-1.5 py-0.2 text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded">
                                 Expired
                               </span>
-                              {isRecentlyUpdated && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                  Updated
-                                </span>
-                              )}
                             </div>
-                          </div>
-                        );
-                      } else if (daysUntilExpiry <= 30) {
-                        return (
-                          <div className="flex flex-col relative">
-                            <span className="text-yellow-600 text-sm font-medium">
-                              {formattedDate}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <span className="text-yellow-500 text-xs">
-                                {daysUntilExpiry} days left
+                          );
+                        } else if (daysUntilExpiry <= 30) {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                {formattedDate}
                               </span>
-                              {isRecentlyUpdated && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                  Updated
-                                </span>
-                              )}
+                              <span className="inline-flex px-1.5 py-0.2 text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded">
+                                {daysUntilExpiry}d left
+                              </span>
                             </div>
-                          </div>
-                        );
-                      } else {
-                        return (
-                          <div className="flex flex-col relative">
-                            <span className="text-green-600 text-sm font-medium">
-                              {formattedDate}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <span className="text-green-500 text-xs">
+                          );
+                        } else {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                {formattedDate}
+                              </span>
+                              <span className="inline-flex px-1.5 py-0.2 text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded">
                                 Active
                               </span>
-                              {isRecentlyUpdated && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                  Updated
-                                </span>
-                              )}
                             </div>
-                          </div>
-                        );
-                      }
-                    })()}
+                          );
+                        }
+                      })()}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap flex gap-2">
-                    <button
-                      className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 dark:bg-gray-800 rounded-lg transition-colors"
-                      title="Edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/clinic-edit?id=${clinic._id}`);
-                      }}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
                       <button
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 ${
-                          clinic.isActive ? "bg-gray-600" : "bg-gray-200"
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 ${
+                          clinic.isActive ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-700"
                         }`}
                         onClick={async (e) => {
                           e.stopPropagation();
@@ -2016,19 +2052,31 @@ const Clinics = () => {
                         }}
                       >
                         <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            clinic.isActive ? "translate-x-6" : "translate-x-1"
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
+                            clinic.isActive ? "translate-x-4" : "translate-x-1"
                           }`}
                         />
                       </button>
                       <span
-                        className={`ml-3 text-sm font-medium ${
-                          clinic.isActive ? "text-gray-700" : "text-gray-500"
+                        className={`text-xs font-medium ${
+                          clinic.isActive ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400"
                         }`}
                       >
                         {clinic.isActive ? "Active" : "Inactive"}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-right">
+                    <button
+                      className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                      title="Edit Clinic"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/clinic-edit?id=${clinic._id}`);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
