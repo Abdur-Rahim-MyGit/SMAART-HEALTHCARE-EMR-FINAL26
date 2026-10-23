@@ -39,7 +39,6 @@ async function start() {
     console.log(`\x1b[32m${divider}\x1b[0m`);
     console.log(`  📡 \x1b[1mAPI URL:\x1b[0m       http://localhost:${env.PORT}`);
     console.log(`  🏥 \x1b[1mEnvironment:\x1b[0m   ${env.NODE_ENV}`);
-    console.log(`  🐘 \x1b[1mPostgreSQL:\x1b[0m    \x1b[32mConnected\x1b[0m`);
     console.log(`  🍃 \x1b[1mMongoDB:\x1b[0m       \x1b[32mConnected\x1b[0m`);
     console.log(`  🔍 \x1b[1mHealth Check:\x1b[0m  http://localhost:${env.PORT}/health/live`);
     console.log(`\x1b[32m${divider}\x1b[0m\n`);

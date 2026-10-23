@@ -708,25 +708,25 @@ function createStyledTestCaseSheet() {
   // 1. Headers & Column Setup
   const headers = ${JSON.stringify(headers)};
   const testCasesData = ${JSON.stringify(testCases.map(tc => [
-    tc.id,
-    tc.module,
-    tc.subModule,
-    tc.title,
-    tc.type,
-    tc.priority,
-    tc.severity,
-    tc.preconditions,
-    tc.steps,
-    tc.testData,
-    tc.expectedResult,
-    tc.actualResult,
-    tc.status,
-    tc.executionType,
-    tc.defectId,
-    tc.testedBy,
-    tc.executionDate,
-    tc.remarks
-  ]))};
+  tc.id,
+  tc.module,
+  tc.subModule,
+  tc.title,
+  tc.type,
+  tc.priority,
+  tc.severity,
+  tc.preconditions,
+  tc.steps,
+  tc.testData,
+  tc.expectedResult,
+  tc.actualResult,
+  tc.status,
+  tc.executionType,
+  tc.defectId,
+  tc.testedBy,
+  tc.executionDate,
+  tc.remarks
+]))};
 
   // Insert Header Row
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
