@@ -306,19 +306,123 @@ const Patients = () => {
     );
   }
 
+  const patientStats = {
+    total: patients.length,
+    active: patients.filter((p) => p.isActive !== false).length,
+    inactive: patients.filter((p) => p.isActive === false).length,
+    clinics: clinics.length,
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Patients</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Manage patient records and information
-          </p>
+      {/* Signature EMR Gradient Header Banner */}
+      <div className="bg-gradient-to-r from-[#e6f0ff] to-[#e6f7f5] dark:from-gray-800 dark:to-gray-700 rounded-2xl p-6 shadow-sm border border-blue-50/50 dark:border-gray-800">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-blue-600 text-white rounded-xl shadow-md">
+                <Users className="h-6 w-6" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                Patients Management
+              </h1>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 text-sm sm:text-base">
+              Comprehensive patient health records, demographics directory, and clinical profiles
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => {
+                fetchPatients();
+                fetchClinics();
+                toast.success("Patients data refreshed");
+              }}
+              className="bg-white/80 dark:bg-gray-800/80 backdrop-blur text-gray-700 dark:text-gray-200 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-white dark:hover:bg-gray-800 transition-all flex items-center shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <Activity className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
+              Refresh Data
+            </button>
+            <div className="bg-gradient-to-r from-[#004D99] to-[#42A89B] text-white py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center shadow-md">
+              <span className="w-2 h-2 bg-emerald-400 rounded-full mr-2 animate-pulse"></span>
+              {patientStats.active} Active Records
+            </div>
+          </div>
         </div>
-        {/* Add Patient removed: patients come from backend */}
       </div>
 
-      <div className="card dark:bg-gray-950 dark:border dark:border-gray-800">
+      {/* KPI Statistics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Total Patients
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">
+                {patientStats.total}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Enrolled individuals</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <Users className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Active Patients
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                {patientStats.active}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Active clinical records</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <Activity className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Inactive / In Review
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-rose-600 dark:text-rose-400 mt-1">
+                {patientStats.inactive}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Archived or pending</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <User className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Registered Clinics
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-bold text-purple-600 dark:text-purple-400 mt-1">
+                {patientStats.clinics}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Associated healthcare sites</p>
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Building2 className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-950 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-5 sm:p-6">
         {/* Search and Filter Section */}
         <div className="mb-6 space-y-4">
           {/* General Search Bar */}
@@ -567,39 +671,39 @@ const Patients = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-black">
+          <table className="w-full divide-y divide-gray-200 dark:divide-gray-800">
+            <thead className="bg-gray-50 dark:bg-gray-900/80">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Patient
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Age/Gender
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Demographics
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Contact
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Contact & Location
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Address
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Clinic & Doctor
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Clinic
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-950 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="bg-white dark:bg-gray-950 divide-y divide-gray-200 dark:divide-gray-800">
               {currentPatients.map((patient) => (
                 <tr
                   key={patient._id}
-                  className="hover:bg-primary-50 dark:hover:bg-gray-900 cursor-pointer transition-colors"
+                  className="hover:bg-blue-50/40 dark:hover:bg-gray-900/50 cursor-pointer transition-colors"
                   onClick={() => handleViewPatient(patient)}
                 >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold flex items-center justify-center overflow-hidden flex-shrink-0 text-xs">
                         {patient.profileImage ? (
                           <img
                             src={patient.profileImage}
@@ -613,67 +717,72 @@ const Patients = () => {
                           />
                         ) : null}
                         <User
-                          className="h-5 w-5 text-gray-600"
+                          className="h-4 w-4 text-blue-600 dark:text-blue-300"
                           style={{
                             display: patient.profileImage ? "none" : "block",
                           }}
                         />
                       </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[170px]">
                           {patient.fullName || "Unknown"}
                         </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {patient.email || "No email"}
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[170px]">
+                          {patient.email || (patient.uhid ? `UHID: ${patient.uhid}` : "No email")}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 dark:text-white">
-                      {patient.age || getAgeFromDOB(patient.dateOfBirth)} years
+                  <td className="px-4 py-3 text-xs">
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {patient.age || getAgeFromDOB(patient.dateOfBirth)} yrs
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400 capitalize">
-                      {patient.gender?.replace("_", " ")}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    <div className="flex items-center">
-                      <Phone className="h-4 w-4 text-gray-400 mr-1" />
-                      {patient.phone}
-                    </div>
-                    {patient.emergencyContact?.name && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Emergency: {patient.emergencyContact.name}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    <div className="flex items-center">
-                      <MapPin className="h-4 w-4 text-gray-400 mr-1" />
-                      {patient.address?.city || "Not provided"}
+                    <div className="text-gray-500 dark:text-gray-400 capitalize mt-0.5">
+                      {patient.gender?.replace("_", " ") || "Unspecified"}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 text-xs">
+                    <div className="flex items-center text-gray-800 dark:text-gray-200">
+                      <Phone className="h-3.5 w-3.5 text-gray-400 mr-1.5 flex-shrink-0" />
+                      <span className="truncate max-w-[140px]">{patient.phone || "No phone"}</span>
+                    </div>
+                    <div className="flex items-center text-gray-500 dark:text-gray-400 mt-1">
+                      <MapPin className="h-3.5 w-3.5 text-gray-400 mr-1.5 flex-shrink-0" />
+                      <span className="truncate max-w-[140px]">{patient.address?.city || "Not provided"}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    <div className="font-medium text-gray-800 dark:text-gray-200 truncate max-w-[160px]">
+                      {getClinicName(patient)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400 mt-0.5 truncate max-w-[160px]">
+                      Dr. {getDoctorName(patient)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
                         patient.status === "Active"
-                          ? "bg-green-100 text-green-800"
+                          ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-400"
                           : patient.status === "Inactive"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-yellow-100 text-yellow-800"
+                          ? "bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-400"
+                          : "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400"
                       }`}
                     >
                       {patient.status || "Active"}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                    <div className="text-gray-800 dark:text-gray-200">
-                      {getClinicName(patient)}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      Doctor: {getDoctorName(patient)}
-                    </div>
+                  <td className="px-4 py-3 whitespace-nowrap text-right">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewPatient(patient);
+                      }}
+                      className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                      title="View Details"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
