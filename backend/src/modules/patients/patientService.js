@@ -6,6 +6,8 @@ const { serializeRow, ref } = require('../../common/utils/serialize');
 const { enqueueEvent } = require('../../infrastructure/outbox/outboxRepository');
 const { auditInTrx } = require('../audit/auditRepository');
 const documents = require('../documents/documentService');
+const { getDb } = require('../../infrastructure/mongodb/connection');
+const { uhidYear, uhidCounterKey, formatUhid, normalizeUhid } = require('./uhidFormat');
 
 const FIELDS = ['fullName', 'dateOfBirth', 'gender', 'phone', 'email', 'bloodGroup', 'maritalStatus', 'nationality', 'occupation', 'modeOfCare', 'city', 'pinCode', 'attenderEmail', 'attenderMobile', 'attenderWhatsapp', 'referringDoctor', 'referredClinic', 'handDominance', 'isUnder18', 'notes', 'status', 'address', 'emergencyContact', 'insurance', 'parentGuardian'];
 const ALIASES = { bloodType: 'bloodGroup', insuranceInfo: 'insurance', mobile: 'phone', imageUrl: 'profileImageUrl' };
@@ -29,7 +31,7 @@ function toDoc(input) {
   for (const f of FIELDS) if (n[f] !== undefined) doc[f] = n[f];
   const attrs = {};
   for (const [k, v] of Object.entries(n)) if (!FIELDS.includes(k) && !IGNORED.has(k) && !ALIASES[k] && v !== undefined) attrs[k] = v;
-  return { doc, attrs, identifiers: { uhid: n.uhid, aadhaar: n.aadhaarNumber } };
+  return { doc, attrs, identifiers: { uhid: normalizeUhid(n.uhid) || n.uhid, aadhaar: n.aadhaarNumber } };
 }
 function age(dob) {
   if (!dob) return null;
@@ -97,9 +99,22 @@ async function upsertIdentifiers(db, patient, identifiers) {
     if (!other) await db.c('patient_identifiers').insertOne({ clinicId: patient.clinicId, patientId: patient._id, system, value: v });
   }
 }
-async function nextUhid(db, clinicId) {
-  const seq = await db.nextSequence(`uhid:${clinicId}`);
-  return `UH${String(clinicId).slice(0, 4).toUpperCase()}${String(seq).padStart(6, '0')}`;
+/**
+ * Next patient UHID, SH-26-000123 (uhidFormat.js): the SAME counter the Consultant dashboard and the Physio
+ * app use (shared `counters`, one per year), so a patient has one UHID in every app. It was per clinic
+ * (UH<clinic>000001), which gave the same person a different ID here. A number already in use, in this
+ * table or on the shared `patients` records, is skipped.
+ */
+async function nextUhid(db) {
+  const yy = uhidYear();
+  const raw = getDb();
+  for (let i = 0; i < 1000; i++) {
+    const uhid = formatUhid(yy, await db.nextSequence(uhidCounterKey(yy)));
+    const taken = await raw.collection('patient_identifiers').findOne({ system: 'uhid', value: uhid }, { projection: { _id: 1 } })
+      || await raw.collection('patients').findOne({ uhid }, { projection: { _id: 1 } });
+    if (!taken) return uhid;
+  }
+  throw new Error('Could not allocate a free UHID');
 }
 
 async function list(scope, { search, clinicId, page, limit, offset, status }) {
@@ -107,7 +122,13 @@ async function list(scope, { search, clinicId, page, limit, offset, status }) {
     const filter = {};
     if (clinicId && scope.role === ROLES.SUPER_MASTER_ADMIN) filter.clinicId = clinicId;
     if (status) filter.status = status;
-    if (search) filter.$or = [{ fullName: contains(search) }, { phone: contains(search) }, { email: contains(search) }];
+    if (search) {
+      filter.$or = [{ fullName: contains(search) }, { phone: contains(search) }, { email: contains(search) }];
+      // UHID search: exact (also short forms like sh26123) or part of one, current or previous (before conversion).
+      const exact = normalizeUhid(search);
+      const ids = await db.c('patient_identifiers').find({ system: 'uhid', $or: [{ value: contains(search) }, ...(exact ? [{ value: exact }] : [])] }, { limit: 50 });
+      if (ids.length) filter.$or.push({ _id: { $in: ids.map((i) => i.patientId) } });
+    }
     const col = db.c('patients');
     const [rows, total] = await Promise.all([col.find(filter, { sort: { createdAt: -1 }, limit, skip: offset }), col.count(filter)]);
     return { data: await hydrate(db, rows), total, page, limit };
@@ -135,7 +156,7 @@ async function create(scope, input, ctx) {
   return withTenant(scope, async (db) => {
     if (!(await db.c('clinics').exists({ _id: clinicId }))) throw notFound('Clinic');
     const patient = await db.c('patients').insertOne({ ...doc, clinicId, status: doc.status || 'active', attributes: attrs, address: doc.address || {}, emergencyContact: doc.emergencyContact || {}, insurance: doc.insurance || {}, parentGuardian: doc.parentGuardian || {}, isUnder18: !!doc.isUnder18, profileImageUrl: typeof input.profileImage === 'string' && /^https?:\/\//.test(input.profileImage) ? input.profileImage : null, profileDocumentId: null, governmentDocumentId: null, lastVisitAt: null, nextAppointmentAt: null });
-    await upsertIdentifiers(db, patient, { uhid: identifiers.uhid || (await nextUhid(db, clinicId)), aadhaar: identifiers.aadhaar });
+    await upsertIdentifiers(db, patient, { uhid: identifiers.uhid || (await nextUhid(db)), aadhaar: identifiers.aadhaar });
     if (input.profileImage && /^data:/.test(input.profileImage)) {
       const docId = await saveProfileImage(db, scope, patient, input.profileImage, ctx);
       if (docId) { await db.c('patients').updateOne({ _id: patient._id }, { profileDocumentId: docId }); patient.profileDocumentId = docId; }
