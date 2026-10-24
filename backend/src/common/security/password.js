@@ -19,7 +19,7 @@ async function hashPassword(plain) {
  * path replaces them with bcrypt the first time the user signs in. */
 function verifyLegacyArgon2(plain, stored) {
   let argon2;
-  try { argon2 = require('argon2'); } catch (e) { return Promise.resolve(false); }
+  try { argon2 = require('argon2'); } catch { return Promise.resolve(false); }
   return argon2.verify(stored, plain).catch(() => false);
 }
 
