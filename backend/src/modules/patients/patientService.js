@@ -47,8 +47,7 @@ function serializePatient(row, { clinic, identifiers = [], profileUrl, assignedD
 }
 async function hydrate(db, rows) {
   if (!rows.length) return [];
-  const clinics = await db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId))] } }, { projection: { name: 1, city: 1, state: 1 } });
-  const cmap = Object.fromEntries(clinics.map((c) => [c._id, c]));
+  const cmap = await db.clinicMap(rows.map((r) => r.clinicId), { name: 1, city: 1, state: 1 });
   const ids = await db.c('patient_identifiers').find({ patientId: { $in: rows.map((r) => r._id) } });
   const imap = {};
   for (const i of ids) (imap[i.patientId] = imap[i.patientId] || []).push(i);

@@ -189,6 +189,18 @@ class TenantDb {
   c(name) {
     return new TenantCollection(name, this.scope, this.session);
   }
+  /**
+   * Clinics by id, keyed by the id as a string. Clinics have ObjectId _ids (since 2026-10-07) while the
+   * clinicId stored on patients, users and vitals is the hex string, so both forms are queried.
+   */
+  async clinicMap(ids, projection) {
+    const { ObjectId } = require('mongodb');
+    const clean = [...new Set(ids.filter(Boolean).map(String))];
+    if (!clean.length) return {};
+    const queryIds = clean.flatMap((id) => (/^[0-9a-fA-F]{24}$/.test(id) ? [id, new ObjectId(id)] : [id]));
+    const rows = await this.c('clinics').find({ _id: { $in: queryIds } }, { projection });
+    return Object.fromEntries(rows.map((c) => [String(c._id), c]));
+  }
   /** Atomic sequence for human-readable numbers (UHID, RX-, INV-). */
   async nextSequence(key) {
     const r = await getDb().collection('counters').findOneAndUpdate({ _id: key }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after', session: this.session });

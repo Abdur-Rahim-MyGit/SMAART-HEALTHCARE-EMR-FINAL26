@@ -12,9 +12,8 @@ function serializeUser(r, clinic) {
   return { _id: r._id, id: r._id, firstName: r.firstName, lastName: r.lastName, fullName: r.fullName || [r.firstName, r.lastName].filter(Boolean).join(' '), email: r.email, phone: r.phone, username: r.username, role: r.role, clinicId: r.clinicId ? ref(r.clinicId, { name: clinic ? clinic.name : undefined }) : null, isActive: r.isActive, isVerified: r.isVerified, lastLogin: r.lastLoginAt, createdAt: r.createdAt, updatedAt: r.updatedAt };
 }
 async function hydrate(db, rows) {
-  const clinics = await db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId).filter(Boolean))] } }, { projection: { name: 1 } });
-  const map = Object.fromEntries(clinics.map((c) => [c._id, c]));
-  return rows.map((r) => serializeUser(r, map[r.clinicId]));
+  const map = await db.clinicMap(rows.map((r) => r.clinicId), { name: 1 });
+  return rows.map((r) => serializeUser(r, map[String(r.clinicId)]));
 }
 
 async function list(scope, { role, clinicId }) {
