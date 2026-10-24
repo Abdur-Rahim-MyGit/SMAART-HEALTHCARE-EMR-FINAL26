@@ -46,9 +46,8 @@ function serialize(r, { patient, clinic } = {}) {
 async function hydrate(db, rows) {
   if (!rows.length) return [];
   const pmap = await patients.refsFor(db, rows.map((r) => r.patientId));
-  const clinics = await db.c('clinics').find({ _id: { $in: [...new Set(rows.map((r) => r.clinicId))] } }, { projection: { name: 1 } });
-  const cmap = Object.fromEntries(clinics.map((c) => [c._id, c]));
-  return rows.map((r) => serialize(r, { patient: pmap[r.patientId], clinic: cmap[r.clinicId] }));
+  const cmap = await db.clinicMap(rows.map((r) => r.clinicId), { name: 1 });
+  return rows.map((r) => serialize(r, { patient: pmap[r.patientId], clinic: cmap[String(r.clinicId)] }));
 }
 async function list(scope, { patientId, from, to, clinicId, limit = 100, offset = 0, page = 1 }) {
   return withTenant(scope, async (db) => {

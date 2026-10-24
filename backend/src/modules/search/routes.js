@@ -29,7 +29,7 @@ router.get('/global', authorize('patients:read'), tenantScope(), validate({ quer
     const arows = await db.c('appointments').find({ $or: [{ appointmentType: like }, { status: like }, { reason: like }, { providerName: like }, { patientId: { $in: nameMatches } }] }, { sort: { scheduledAt: -1 }, limit: per });
     const drows = await db.c('practitioners').find({ kind: 'doctor', $or: [{ fullName: like }, { email: like }, { specialty: like }, { phone: like }] }, { limit: per });
     const clinicIds = [...new Set([...prows, ...drows].map((r) => r.clinicId))];
-    const cmap = Object.fromEntries((await db.c('clinics').find({ _id: { $in: clinicIds } }, { projection: { name: 1 } })).map((c) => [c._id, c]));
+    const cmap = await db.clinicMap(clinicIds, { name: 1 });
     const patientsOut = prows.map((p) => ({ ...patients.serializePatient(p, { clinic: cmap[p.clinicId] }), ...splitName(p.fullName), patientId: p._id }));
     const appointmentsOut = await appointments.hydrate(db, arows);
     const doctorsOut = drows.map((d) => ({ ...practitioners.serialize(d, { clinic: cmap[d.clinicId] }), ...splitName(d.fullName), clinicId: ref(d.clinicId, { name: cmap[d.clinicId]?.name }) }));
